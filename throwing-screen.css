@@ -1,0 +1,583 @@
+/* 📁 throwing-screen.css - Throwing Screen Specific Styles */
+
+/* Throwing Screen Base */
+.throwing-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.throwing-screen.cooldown {
+  cursor: wait;
+}
+
+/* Sockball Counter Display - Repositioned near launch area */
+.sockball-counter {
+  position: absolute;
+  bottom: 120px;
+  left: 180px;
+  background: var(--primary-bg);
+  border: var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-bold);
+  font-size: 1.2rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-medium), var(--glow-primary);
+  z-index: 200;
+  backdrop-filter: blur(10px);
+  min-width: 120px;
+  text-align: center;
+}
+
+.sockball-counter .count {
+  color: var(--accent-gold);
+  font-size: 1.5rem;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+  display: block;
+  margin-top: 5px;
+}
+
+/* Martha Status Display - Positioned adjacent to sockball counter */
+.martha-status {
+  position: absolute;
+  bottom: 120px;
+  left: 320px;
+  background: var(--secondary-bg);
+  border: 2px solid rgba(138, 43, 226, 0.6);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+  box-shadow: var(--shadow-medium), 0 0 15px rgba(138, 43, 226, 0.4);
+  z-index: 200;
+  backdrop-filter: blur(10px);
+  min-width: 140px;
+}
+
+.martha-status .wants {
+  color: var(--accent-blue);
+  font-size: 1rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.martha-status .collected {
+  color: var(--success-color);
+  font-size: 1.3rem;
+  text-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+  display: block;
+  margin-top: 5px;
+}
+
+/* Throwing Cooldown Indicator - Positioned below the counters */
+.throw-cooldown {
+  position: absolute;
+  bottom: 50px;
+  left: 180px;
+  width: 280px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  z-index: 200;
+}
+
+.throw-cooldown .cooldown-fill {
+  height: 100%;
+  background: var(--warning-bg);
+  border-radius: var(--radius-sm);
+  transition: width 0.1s ease-out;
+  box-shadow: inset 0 1px 3px rgba(255, 255, 255, 0.3);
+}
+
+.throw-cooldown.ready .cooldown-fill {
+  background: var(--success-bg);
+  box-shadow: inset 0 1px 3px rgba(255, 255, 255, 0.3), var(--glow-success);
+}
+
+.throw-cooldown .cooldown-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: var(--text-primary);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+/* Enhanced Launch Position Indicator */
+.launch-indicator {
+  position: absolute;
+  z-index: 145;
+  width: 50px;
+  height: 50px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(255, 255, 255, 0.4) 60%,
+    transparent 80%
+  );
+  border: 3px solid rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: launch-indicator-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.launch-indicator::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Sockball Trajectory Line */
+.trajectory-line {
+  position: absolute;
+  pointer-events: none;
+  z-index: 150;
+}
+
+.trajectory-preview {
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 3;
+  stroke-dasharray: 8, 4;
+  fill: none;
+  animation: trajectory-dash 1s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5));
+}
+
+/* Sockball Projectiles */
+.sockball-projectile {
+  position: absolute;
+  z-index: 140;
+  transform-origin: center;
+  animation: sockball-spin 0.8s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
+  transition: filter 0.1s ease-out;
+}
+
+.sockball-projectile.hit {
+  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.9));
+  animation: sockball-hit 0.3s ease-out;
+}
+
+/* Martha Character Enhancements */
+.martha-character {
+  position: absolute;
+  z-index: 150;
+  transition: filter 0.1s ease-out;
+}
+
+.martha-character.hit {
+  filter: brightness(200%) saturate(150%);
+  animation: martha-hit-flash 0.4s ease-out;
+}
+
+.martha-character.exiting {
+  animation: martha-exit 1s ease-in;
+}
+
+.martha-character.entering {
+  animation: martha-enter 1s ease-out;
+}
+
+/* Point Popup Effects */
+.point-popup {
+  position: absolute;
+  z-index: 180;
+  color: var(--accent-gold);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-bold);
+  font-size: 1.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 215, 0, 0.6);
+  pointer-events: none;
+  animation: point-popup-float 1s ease-out;
+}
+
+/* Game State Messages for Throwing Screen */
+.throwing-message {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  background: var(--primary-bg);
+  border: var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+  z-index: 300;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-heavy), var(--glow-primary);
+  backdrop-filter: blur(15px);
+  animation: throwing-message-pulse 2s ease-in-out infinite;
+  max-width: 80%;
+}
+
+.throwing-message.success {
+  background: var(--success-bg);
+  border-color: var(--success-color);
+  box-shadow: var(--shadow-heavy), var(--glow-success);
+}
+
+.throwing-message.warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-color);
+  box-shadow: var(--shadow-heavy), var(--glow-warning);
+}
+
+/* Throwing Area Bounds Indicator */
+.throwing-bounds {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-md);
+  z-index: 100;
+  animation: bounds-fade 3s ease-in-out infinite;
+}
+
+/* Background Image Styling */
+.throwing-screen-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 50;
+}
+
+/* Animations */
+@keyframes trajectory-dash {
+  to {
+    stroke-dashoffset: 12;
+  }
+}
+
+@keyframes sockball-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sockball-hit {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.4);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes martha-hit-flash {
+  0% {
+    transform: scale(1);
+    filter: brightness(200%) saturate(150%);
+  }
+  25% {
+    transform: scale(1.1);
+    filter: brightness(300%) saturate(200%);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: brightness(250%) saturate(175%);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(100%) saturate(100%);
+  }
+}
+
+@keyframes martha-exit {
+  to {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes martha-enter {
+  from {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes point-popup-float {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-25px) scale(1.3);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-50px) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes throwing-message-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}
+
+@keyframes launch-indicator-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.7;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
+  }
+}
+
+@keyframes bounds-fade {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .sockball-counter,
+  .martha-status {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 1rem;
+    bottom: 100px;
+  }
+
+  .sockball-counter {
+    left: 150px;
+    min-width: 100px;
+  }
+
+  .martha-status {
+    left: 270px;
+    min-width: 120px;
+  }
+
+  .sockball-counter .count {
+    font-size: 1.2rem;
+  }
+
+  .martha-status .collected {
+    font-size: 1.1rem;
+  }
+
+  .throw-cooldown {
+    width: 220px;
+    height: 15px;
+    bottom: 40px;
+    left: 150px;
+  }
+
+  .launch-indicator {
+    width: 40px;
+    height: 40px;
+  }
+
+  .launch-indicator::after {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sockball-counter,
+  .martha-status {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.9rem;
+    bottom: 90px;
+  }
+
+  .sockball-counter {
+    left: 120px;
+    min-width: 80px;
+  }
+
+  .martha-status {
+    left: 220px;
+    min-width: 100px;
+  }
+
+  .sockball-counter .count {
+    font-size: 1.1rem;
+  }
+
+  .martha-status .collected {
+    font-size: 1rem;
+  }
+
+  .throw-cooldown {
+    width: 180px;
+    height: 12px;
+    bottom: 35px;
+    left: 120px;
+  }
+
+  .throwing-message {
+    font-size: 1.2rem;
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+
+  .launch-indicator {
+    width: 35px;
+    height: 35px;
+  }
+
+  .launch-indicator::after {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sockball-counter,
+  .martha-status {
+    padding: var(--spacing-xs);
+    font-size: 0.8rem;
+    bottom: 80px;
+  }
+
+  .sockball-counter {
+    left: 100px;
+    min-width: 70px;
+  }
+
+  .martha-status {
+    left: 180px;
+    min-width: 80px;
+  }
+
+  .sockball-counter .count {
+    font-size: 1rem;
+  }
+
+  .martha-status .collected {
+    font-size: 0.9rem;
+  }
+
+  .throw-cooldown {
+    width: 140px;
+    height: 10px;
+    bottom: 30px;
+    left: 100px;
+  }
+
+  .throwing-message {
+    font-size: 1rem;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .launch-indicator {
+    width: 30px;
+    height: 30px;
+  }
+
+  .launch-indicator::after {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+@media (max-height: 600px) {
+  .sockball-counter,
+  .martha-status {
+    bottom: 70px;
+    padding: var(--spacing-xs);
+  }
+
+  .throw-cooldown {
+    bottom: 25px;
+  }
+}
+
+@media (max-height: 400px) {
+  .sockball-counter,
+  .martha-status {
+    bottom: 60px;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+  }
+
+  .throw-cooldown {
+    bottom: 20px;
+    width: 100px;
+    height: 8px;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .sockball-projectile,
+  .martha-character,
+  .launch-indicator,
+  .throwing-bounds,
+  .trajectory-preview {
+    animation: none !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .sockball-counter,
+  .martha-status,
+  .throwing-message {
+    background: #000000 !important;
+    border-color: #ffffff !important;
+    color: #ffffff !important;
+  }
+
+  .throw-cooldown {
+    background: #000000 !important;
+    border-color: #ffffff !important;
+  }
+
+  .throw-cooldown .cooldown-fill {
+    background: #ffffff !important;
+  }
+
+  .launch-indicator {
+    background: radial-gradient(circle, #ffffff 0%, transparent 70%) !important;
+    border-color: #ffffff !important;
+  }
+}

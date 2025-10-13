@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sock Game</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="screen.css" />
+    <link rel="stylesheet" href="loading-screen.css" />
+    <link rel="stylesheet" href="level-select.css" />
+    <link rel="stylesheet" href="match-screen.css" />
+    <link rel="stylesheet" href="throwing-screen.css" />
+    <link rel="stylesheet" href="level-end-screen.css" />
+  </head>
+  <body>
+    <div id="gameContainer">
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- Debug info (hidden by default) -->
+      <div id="debugInfo" class="debug-info" style="display: none">
+        <div class="stat">
+          <span class="stat-label">FPS:</span>
+          <span class="stat-value" id="fpsValue">60</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Socks:</span>
+          <span class="stat-value" id="sockCountValue">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Animations:</span>
+          <span class="stat-value" id="animationCountValue">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Particles:</span>
+          <span class="stat-value" id="particleCountValue">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load game files in correct order -->
+    <script src="config.js"></script>
+    <script src="audio-manager.js"></script>
+    <script src="feedback-manager.js"></script>
+    <script src="story-manager.js"></script>
+
+    <!-- Loading screen (loaded first) -->
+    <script src="loading-screen.js"></script>
+
+    <!-- classes -->
+    <script src="screen.js"></script>
+    <!-- level select -->
+    <script src="level-select/ui-helpers.js"></script>
+    <script src="level-select/story-viewer.js"></script>
+    <script src="level-select/difficulty-modal.js"></script>
+    <script src="level-select.js"></script>
+    <!-- sock match -->
+    <script src="sockmanager.js"></script>
+    <script src="match-physics.js"></script>
+    <script src="match-screen.js"></script>
+    <!-- sock throw  -->
+    <script src="martha-manager.js"></script>
+    <script src="throwing-screen.js"></script>
+    <!-- level end -->
+    <script src="level-end-screen.js"></script>
+    <!-- main game -->
+    <script src="app.js"></script>
+  </body>
+</html>
