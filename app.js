@@ -15,6 +15,7 @@ class SockGame {
     this.currentLevel = 0;
     this.playerPoints = 0;
     this.sockBalls = 0;
+    this.totalSockMatches = 0; // Lifetime total sock matches across all levels
     this.matchingTime = 60;
     // Tracks elapsed time during matching phase (counts up from 0)
     this.timeElapsed = 0;
@@ -25,11 +26,28 @@ class SockGame {
     this.loadedImages = 0;
     this.totalImages = 0;
 
-    this.unlockedLevels = [...GameConfig.INITIAL_UNLOCKED_LEVELS];
-    this.completedLevels = [...GameConfig.INITIAL_COMPLETED_LEVELS];
+    // NEW GAME+ System - Per-difficulty tracking
+    this.selectedDifficulty = 0; // Currently selected difficulty in UI (0 = base, 1-4 = +1 to +4)
+    this.highestUnlockedDifficulty = 0; // 0-4 for base through +4
+
+    // Per-difficulty level progress
+    // Format: { difficulty: [unlocked levels array] }
+    this.unlockedLevelsByDifficulty = {
+      0: [...GameConfig.INITIAL_UNLOCKED_LEVELS], // Base game starts with level 1 unlocked
+    };
+
+    // Per-difficulty level completions
+    // Format: { difficulty: [completed levels array] }
+    this.completedLevelsByDifficulty = {
+      0: [...GameConfig.INITIAL_COMPLETED_LEVELS],
+    };
+
+    // Legacy arrays for backwards compatibility (point to base difficulty)
+    this.unlockedLevels = this.unlockedLevelsByDifficulty[0];
+    this.completedLevels = this.completedLevelsByDifficulty[0];
 
     // Phase 1.2 - Enhanced save system properties
-    this.currentDifficulty = 0; // Base difficulty (0 = normal, 1 = +1, etc.)
+    this.currentDifficulty = 0; // Difficulty of currently playing level
     this.achievements = this.initializeAchievements();
     this.tutorialCompleted = false;
     this.storyViewed = false; // Track if intro story has been shown
@@ -38,11 +56,6 @@ class SockGame {
       total: 0,
       byLevel: {},
     };
-
-    // Phase 3.3 - Difficulty completion tracking
-    // Format: {levelIndex: [completedDifficulties]}
-    this.difficultyCompletions = {};
-    this.highestUnlockedDifficulty = 0; // 0-4 for base through +4
 
     // NEW GAME+ notification
     this.showNewGamePlusNotification = false;
@@ -59,6 +72,9 @@ class SockGame {
 
     // Phase 4.1 - Initialize story manager
     this.storyManager = new StoryManager(this);
+
+    // Initialize controller manager
+    this.controllerManager = new ControllerManager(this);
 
     // Initialize sockball queue
     this.sockballQueue = [];
@@ -79,6 +95,9 @@ class SockGame {
     this.fpsDisplay = 0;
     this.fpsTimer = 0;
     this.animationFrameId = null;
+
+    // Track game state at mousedown to prevent cross-screen clicks
+    this.mouseDownState = null;
 
     // Initialize screens - now using the base Screen class
     this.levelSelect = new LevelSelect(this);
@@ -497,12 +516,35 @@ class SockGame {
     if (savedData) {
       const data = JSON.parse(savedData);
       this.playerPoints = data.playerPoints || 0;
-      this.unlockedLevels = data.unlockedLevels || [
-        ...GameConfig.INITIAL_UNLOCKED_LEVELS,
-      ];
-      this.completedLevels = data.completedLevels || [
-        ...GameConfig.INITIAL_COMPLETED_LEVELS,
-      ];
+      this.sockBalls = data.sockBalls || 0;
+      this.totalSockMatches = data.totalSockMatches || 0;
+
+      // NEW GAME+: Load per-difficulty progress
+      // Always default to Base Game (difficulty 0) on page load
+      this.selectedDifficulty = 0;
+      this.highestUnlockedDifficulty = data.highestUnlockedDifficulty || 0;
+
+      // Load per-difficulty unlocks and completions
+      this.unlockedLevelsByDifficulty = data.unlockedLevelsByDifficulty || {
+        0: [...GameConfig.INITIAL_UNLOCKED_LEVELS],
+      };
+      this.completedLevelsByDifficulty = data.completedLevelsByDifficulty || {
+        0: [...GameConfig.INITIAL_COMPLETED_LEVELS],
+      };
+
+      // Initialize arrays for unlocked difficulties if they don't exist
+      for (let diff = 1; diff <= this.highestUnlockedDifficulty; diff++) {
+        if (!this.unlockedLevelsByDifficulty[diff]) {
+          this.unlockedLevelsByDifficulty[diff] = [true, false, false, false, false, false, false, false, false];
+        }
+        if (!this.completedLevelsByDifficulty[diff]) {
+          this.completedLevelsByDifficulty[diff] = [false, false, false, false, false, false, false, false, false];
+        }
+      }
+
+      // Set legacy arrays to point to Base Game (difficulty 0) on load
+      this.unlockedLevels = this.unlockedLevelsByDifficulty[0];
+      this.completedLevels = this.completedLevelsByDifficulty[0];
 
       // Phase 1.2 - Load enhanced save data
       this.currentDifficulty = data.currentDifficulty || 0;
@@ -514,16 +556,13 @@ class SockGame {
         byLevel: {},
       };
 
-      // Phase 3.3 - Load difficulty completions
-      this.difficultyCompletions = data.difficultyCompletions || {};
-      this.highestUnlockedDifficulty = data.highestUnlockedDifficulty || 0;
-
       // Story panels
       this.unlockedStoryPanels = data.unlockedStoryPanels || Array(9).fill(false);
 
       // Unlock story panels for already-completed levels on base difficulty
-      for (let i = 0; i < this.completedLevels.length; i++) {
-        if (this.completedLevels[i] && !this.unlockedStoryPanels[i]) {
+      const baseLevels = this.completedLevelsByDifficulty[0] || [];
+      for (let i = 0; i < baseLevels.length; i++) {
+        if (baseLevels[i] && !this.unlockedStoryPanels[i]) {
           this.unlockedStoryPanels[i] = true;
         }
       }
@@ -549,12 +588,22 @@ class SockGame {
           };
         }
       }
+
+      console.log(`💾 Loaded game data - Selected difficulty: ${this.selectedDifficulty}, Highest unlocked: ${this.highestUnlockedDifficulty}`);
     }
   }
 
   saveGameData() {
     const data = {
       playerPoints: this.playerPoints,
+      sockBalls: this.sockBalls,
+      totalSockMatches: this.totalSockMatches,
+      // NEW GAME+: Save per-difficulty progress
+      selectedDifficulty: this.selectedDifficulty,
+      highestUnlockedDifficulty: this.highestUnlockedDifficulty,
+      unlockedLevelsByDifficulty: this.unlockedLevelsByDifficulty,
+      completedLevelsByDifficulty: this.completedLevelsByDifficulty,
+      // Legacy fields for backwards compatibility
       unlockedLevels: this.unlockedLevels,
       completedLevels: this.completedLevels,
       // Phase 1.2 - Save enhanced data
@@ -564,25 +613,22 @@ class SockGame {
       bestScores: this.bestScores,
       perfectCatchStats: this.perfectCatchStats,
       achievements: this.achievements,
-      // Phase 3.3 - Save difficulty completions
-      difficultyCompletions: this.difficultyCompletions,
-      highestUnlockedDifficulty: this.highestUnlockedDifficulty,
-
       // Story panels
       unlockedStoryPanels: this.unlockedStoryPanels,
     };
     localStorage.setItem("sockGameData", JSON.stringify(data));
+    console.log(`💾 Saved game data - Selected difficulty: ${this.selectedDifficulty}`);
   }
 
   // Phase 3.3 - Mark level as completed at current difficulty
   markLevelCompleted(levelIndex, difficulty) {
-    if (!this.difficultyCompletions[levelIndex]) {
-      this.difficultyCompletions[levelIndex] = [];
+    // Initialize difficulty array if it doesn't exist
+    if (!this.completedLevelsByDifficulty[difficulty]) {
+      this.completedLevelsByDifficulty[difficulty] = Array(GameConfig.LEVELS.length).fill(false);
     }
 
-    if (!this.difficultyCompletions[levelIndex].includes(difficulty)) {
-      this.difficultyCompletions[levelIndex].push(difficulty);
-    }
+    // Mark this level as completed at this difficulty
+    this.completedLevelsByDifficulty[difficulty][levelIndex] = true;
 
     // Unlock story panel on first completion (base difficulty only)
     if (difficulty === 0 && !this.unlockedStoryPanels[levelIndex]) {
@@ -594,10 +640,14 @@ class SockGame {
     // Check if all levels completed at this difficulty
     const allLevelsCompleted = GameConfig.LEVELS.every((_, index) => {
       return (
-        this.difficultyCompletions[index] &&
-        this.difficultyCompletions[index].includes(difficulty)
+        this.completedLevelsByDifficulty[difficulty] &&
+        this.completedLevelsByDifficulty[difficulty][index]
       );
     });
+
+    console.log(`🎮 Difficulty check: All levels at difficulty ${difficulty} completed? ${allLevelsCompleted}`);
+    console.log(`🎮 Current highest unlocked difficulty: ${this.highestUnlockedDifficulty}`);
+    console.log(`🎮 Difficulty completions:`, this.completedLevelsByDifficulty);
 
     // Unlock next difficulty if all levels completed
     const previousDifficulty = this.highestUnlockedDifficulty;
@@ -607,9 +657,12 @@ class SockGame {
         4 // Max difficulty is +4
       );
 
+      console.log(`🎮 ✨ NEW GAME+ UNLOCKED! Difficulty ${previousDifficulty} → ${this.highestUnlockedDifficulty}`);
+
       // NEW GAME+: Show explanation if just unlocked first difficulty
       if (previousDifficulty === 0 && this.highestUnlockedDifficulty === 1) {
         this.showNewGamePlusNotification = true;
+        console.log(`🎮 📢 Showing NEW GAME+ notification banner!`);
       }
     }
 
@@ -672,6 +725,13 @@ class SockGame {
     this.timeElapsed = 0;
     this.sockBalls = 0;
 
+    // Track catch quality for current level
+    this.catchQualityCounts = {
+      PERFECT: 0,
+      GOOD: 0,
+      REGULAR: 0
+    };
+
     // Initialize sockball queue for new level
     this.initializeSockballQueue();
 
@@ -708,6 +768,9 @@ class SockGame {
 
   handleMouseDown(e) {
     try {
+      // Track the game state when mouse down occurs
+      this.mouseDownState = this.gameState;
+
       // Fix Bug #17: Add error handling for coordinate conversion
       const coords = this.screenToCanvas(e.clientX, e.clientY);
       const x = coords.x;
@@ -774,6 +837,13 @@ class SockGame {
 
   handleClick(e) {
     try {
+      // Prevent cross-screen clicks: only process if game state hasn't changed since mousedown
+      if (this.mouseDownState !== null && this.mouseDownState !== this.gameState) {
+        console.log(`🚫 Ignoring click - state changed from ${this.mouseDownState} to ${this.gameState}`);
+        this.mouseDownState = null;
+        return;
+      }
+
       // Fix Bug #17: Add error handling for coordinate conversion
       const coords = this.screenToCanvas(e.clientX, e.clientY);
       const x = coords.x;
@@ -787,6 +857,9 @@ class SockGame {
       } else if (this.gameState === "gameOver") {
         this.levelEndScreen.handleClick(x, y);
       }
+
+      // Reset mousedown state after processing click
+      this.mouseDownState = null;
     } catch (error) {
       console.error('Error handling click:', error);
     }
@@ -812,6 +885,11 @@ class SockGame {
       this.throwingScreen.update(deltaTime);
     } else if (this.gameState === "gameOver") {
       this.levelEndScreen.update(deltaTime);
+    }
+
+    // Update controller manager
+    if (this.controllerManager) {
+      this.controllerManager.update(deltaTime);
     }
 
     // Update FPS counter
@@ -846,6 +924,11 @@ class SockGame {
       this.throwingScreen.render(this.ctx);
     } else if (this.gameState === "gameOver") {
       this.levelEndScreen.render(this.ctx);
+    }
+
+    // Render controller indicator
+    if (this.controllerManager) {
+      this.controllerManager.render(this.ctx);
     }
 
     // Debug info
@@ -913,6 +996,7 @@ class SockGame {
     // Cleanup managers
     if (this.audioManager) this.audioManager.cleanup();
     if (this.feedbackManager) this.feedbackManager.reset();
+    if (this.controllerManager) this.controllerManager.cleanup();
   }
 }
 

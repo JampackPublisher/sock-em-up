@@ -129,6 +129,18 @@ const GameConfig = {
     POINT_POP_DURATION: 1000,
   },
 
+  // Bottom UI Bar Configuration
+  UI_BAR: {
+    height: 80,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: 2,
+    padding: 10,
+    itemSpacing: 20,
+    panelPadding: 12,
+    panelSpacing: 15,
+  },
+
   // UI positions - Updated for full-width drawer and 3 pairs of drop zones
   SOCK_PILE_POS: { x: 600, y: 700 }, // Will be calculated dynamically for full width
 
@@ -150,6 +162,88 @@ const GameConfig = {
 
   // Game levels
   LEVELS: [
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    //   {
+    //     marthaSpeed: 1,
+    //     sockPairs: 3,
+    //     typesAvailable: [1],
+    //     matchingTime: 60,
+    //     marthaWantsSockballs: 1,
+    //     marthaPatterns: ["random", "circular"],
+    //     marthaPatternSpeed: 1,
+    //   },
+    // ],
     {
       marthaSpeed: 0.5,
       sockPairs: 3,
@@ -210,7 +304,6 @@ const GameConfig = {
       ],
       marthaPatternSpeed: 1.2,
     },
-    // NEW LEVELS - Phase 3.1
     {
       marthaSpeed: 1.3,
       sockPairs: 16,
@@ -304,6 +397,21 @@ const GameConfig = {
       "martha-rentdue.png",
       "martha-win.png",
       "martha-demand.png",
+      "martha-demand-level-select.png",
+      "htp-1.png",
+      "htp-2.png",
+      "htp-3.png",
+      "htp-4.png",
+      "htp-5.png",
+      "story-1.png",
+      "story-2.png",
+      "story-3.png",
+      "story-4.png",
+      "story-5.png",
+      "story-6.png",
+      "story-7.png",
+      "story-8.png",
+      "story-9.png",
     ],
     UI: [
       "background.png",
@@ -324,7 +432,6 @@ const GameConfig = {
   },
 
   // Sockball queue management utilities
-  // These methods will be added to the main game object
   SOCKBALL_QUEUE_METHODS: {
     // Initialize the sockball queue
     initializeSockballQueue: function () {
@@ -368,9 +475,9 @@ const GameConfig = {
 
   // Martha catch mechanics settings
   CATCH_MECHANICS: {
-    CATCH_RADIUS_MULTIPLIER: 2.6, // 2.6x Martha's actual size (2x expansion from 1.3x)
-    PERFECT_CATCH_THRESHOLD: 0.6, // Center 60% of Martha = perfect (2x from 0.3)
-    GOOD_CATCH_THRESHOLD: 1.2, // Center 120% of Martha = good (2x from 0.6)
+    CATCH_RADIUS_MULTIPLIER: 2.6,
+    PERFECT_CATCH_THRESHOLD: 0.6,
+    GOOD_CATCH_THRESHOLD: 1.2,
     PERFECT_CATCH_BONUS: 15,
     GOOD_CATCH_BONUS: 10,
     REGULAR_CATCH_BONUS: 5,
@@ -410,7 +517,7 @@ const GameConfig = {
     },
     PLUS_1: {
       name: "NEW GAME+1",
-      speedMultiplier: 1.1,
+      speedMultiplier: 1.15,
       timeMultiplier: 0.98,
       throwCooldownMultiplier: 0.95,
       displayName: "★",
@@ -418,7 +525,7 @@ const GameConfig = {
     },
     PLUS_2: {
       name: "NEW GAME+2",
-      speedMultiplier: 1.25,
+      speedMultiplier: 1.3,
       timeMultiplier: 0.95,
       throwCooldownMultiplier: 0.9,
       displayName: "★★",
@@ -426,7 +533,7 @@ const GameConfig = {
     },
     PLUS_3: {
       name: "NEW GAME+3",
-      speedMultiplier: 1.4,
+      speedMultiplier: 1.45,
       timeMultiplier: 0.92,
       throwCooldownMultiplier: 0.85,
       displayName: "★★★",
@@ -434,7 +541,7 @@ const GameConfig = {
     },
     PLUS_4: {
       name: "NEW GAME+4",
-      speedMultiplier: 1.5,
+      speedMultiplier: 1.6,
       timeMultiplier: 0.9,
       throwCooldownMultiplier: 0.8,
       displayName: "★★★★",
@@ -452,6 +559,14 @@ const GameConfig = {
       this.DIFFICULTY_MODES.PLUS_4,
     ];
     return modes[Math.min(difficultyLevel, modes.length - 1)];
+  },
+
+  // Calculate level cost adjusted for difficulty
+  // Cost increases by 15% per difficulty level (+1 = 15%, +2 = 30%, etc)
+  getLevelCost: function (levelIndex, difficulty = 0) {
+    const baseCost = this.LEVEL_COSTS[levelIndex];
+    const costMultiplier = 1 + difficulty * 0.15;
+    return Math.ceil(baseCost * costMultiplier);
   },
 
   // Level background mappings
@@ -541,75 +656,36 @@ const GameConfig = {
     },
   },
 
-  // Tutorial step definitions
-  TUTORIAL_STEPS: {
-    MATCH_PHASE: [
-      {
-        id: "shoot_socks",
-        message: "Click the sock pile to shoot socks!",
-        highlightElement: "sockPile",
-        arrowDirection: "down",
-      },
-      {
-        id: "drag_socks",
-        message: "Drag socks to matching drop zones",
-        highlightElement: "dropZones",
-        arrowDirection: "down",
-      },
-      {
-        id: "create_sockball",
-        message: "Match 2 same socks to create a sockball!",
-        highlightElement: "dropZones",
-        arrowDirection: "down",
-      },
-    ],
-    THROW_PHASE: [
-      {
-        id: "aim_throw",
-        message: "Click to aim and throw at Martha!",
-        highlightElement: "martha",
-        arrowDirection: "up",
-      },
-      {
-        id: "hit_martha",
-        message: "Hit Martha to give her sockballs!",
-        highlightElement: "martha",
-        arrowDirection: "up",
-      },
-    ],
-  },
-
-  // Story intro slides
   STORY_SLIDES: [
     {
       id: "meet_martha",
       title: "Meet Martha",
-      text: "This is Martha! She's a sock-loving landlord!",
-      image: "martha.png",
+      text: "This is Martha, your landlord. She loves three things: raising rent, collecting rent, and socks. Unfortunately, you're the one paying.",
+      image: "htp-1.png",
     },
     {
       id: "rent_problem",
       title: "The Rent Problem",
-      text: "Your rent is due! Martha demands sockballs to pay off your rent!",
-      image: "martha-rentdue.png",
+      text: "Bad news: your rent is due. Worse news: Martha doesn't want cash anymore—she wants sockballs. Bundles of two matching socks that she swears are 'the only valid currency left.'",
+      image: "htp-2.png",
     },
     {
       id: "sock_power",
-      title: "Sock Power!",
-      text: "Match pairs of socks to create powerful sockballs!",
-      image: "sockball1.png",
+      title: "Sock Power",
+      text: "Turns out, matching two socks creates a sockball—a surprisingly potent fusion of fabric, static, and stress. Match fast, or Martha starts tapping her foot.",
+      image: "htp-3.png",
     },
     {
       id: "how_to_play",
       title: "How to Play",
-      text: "Shoot socks, match pairs, then throw sockballs to Martha!",
-      image: "martha-demand.png",
+      text: "Select the pile to reveal socks, match pairs to create sockballs, then toss them at Martha before she loses patience. Hit her center mass for bonus points — face shots still count!",
+      image: "htp-4.png",
     },
     {
       id: "good_luck",
-      title: "Good Luck!",
-      text: "Pay off your rent AND become a sock master!",
-      image: "martha-win.png",
+      title: "Good Luck",
+      text: "Keep up the good throws, pay your rent in sockballs, and maybe — just maybe — Martha won't raise rent again next week. Or she will. She usually does.",
+      image: "htp-5.png",
     },
   ],
 
@@ -671,56 +747,56 @@ const GameConfig = {
     {
       id: "panel_1",
       title: "The Collection",
-      text: "Martha wasn't always a landlord. Once, she was Marthilda Socksworth III, heiress to the Socksworth Sockball fortune. Her family made millions selling sockballs as premium stress-relief toys to stressed-out fantasy executives.",
-      image: "martha.png",
+      text: "Before she was your landlord, she was Marthilda Socksworth III, heiress to the Socksworth Sockball fortune—a glittering empire of luxury stress-toys for stressed-out fantasy executives. But she always dreamed of something bigger… literally.",
+      image: "story-1.png",
     },
     {
       id: "panel_2",
       title: "The Incident",
-      text: "Everything changed the day a magical sockball exploded in the family factory. The enchanted cotton fibers shrunk poor Marthilda from 6 feet tall to her current 3-foot goblin-like stature. The doctors said it was permanent. Her family said she was 'easier to store.'",
-      image: "martha2.png",
+      text: "It all unraveled when a prototype sockball exploded at the factory. The enchanted fibers compressed Marthilda’s entire body down to half size. Her family said, ‘Well, she’s easier to store.’ She said, ‘You’ll regret folding me away.’",
+      image: "story-2.png",
     },
     {
       id: "panel_3",
       title: "The Betrayal",
-      text: "Her greedy cousin Reginald took over the company, claiming Martha was 'too small to manage big business.' He renamed it 'Reginald's Remarkable Sockballs' and kicked her out. She swore revenge against all sockballs that day.",
-      image: "martha3.png",
+      text: "Her cousin Reginald seized the company, rebranded it Reginald’s Remarkable Sockballs, and kicked Martha out for being ‘too small to manage big business.’ She swore revenge—not on him directly, but on every sockball that reminded her of him.",
+      image: "story-3.png",
     },
     {
       id: "panel_4",
       title: "The Property Scheme",
-      text: "With her tiny inheritance, Martha bought this building - the cheapest property in town (it was haunted, but she scared the ghosts away by being scarier). She became a landlord to fund her ultimate plan: collecting enough sockballs to recreate the explosion and return her to normal size.",
-      image: "martha-rentdue.png",
+      text: "With her shrunken inheritance, Martha bought the cheapest building in town—haunted, leaning, and allegedly cursed. She evicted the ghosts within a day (they left politely). Her plan: rebuild her sockball empire, one rent payment at a time.",
+      image: "story-4.png",
     },
     {
       id: "panel_5",
       title: "The Science",
-      text: "Martha discovered that if she catches exactly the right number of sockballs thrown at precisely the right speed, she can extract their 'size essence.' That's why she demands rent in sockballs! But if they hit her face... she gets distracted by painful memories and loses count.",
-      image: "martha-demand.png",
+      text: "Late at night, she experimented with sockball physics. If thrown with exact velocity and perfect spin, they released something she called ‘size essence.’ Hence the rent policy: every sockball you throw helps fund her… personal expansion project.",
+      image: "story-5.png",
     },
     {
       id: "panel_6",
       title: "The Secret Lab",
-      text: "Behind the walls of your apartment, Martha has built a laboratory filled with collected sockballs. She's been documenting every texture, every pattern, every stitch. The landlady inspections? She's actually checking if YOU'VE been making sockballs on the side!",
-      image: "martha.png",
+      text: "Hidden behind the drywall of your apartment is a labyrinth of pipes, beakers, and laundry chutes—Martha’s Sockball Research Facility. Those ‘maintenance visits’? She’s collecting data on your matching speed. And possibly your detergent choices.",
+      image: "story-6.png",
     },
     {
       id: "panel_7",
       title: "The Competition",
-      text: "Plot twist: Cousin Reginald has been sending magical sockballs to Martha's tenants, hoping to cause another explosion that would shrink HER even smaller. That's why the sockballs are different colors - they're sabotaged! Martha's been protecting you by demanding you throw them at her instead!",
-      image: "martha2.png",
+      text: "Martha claims Reginald is building a sockball factory right across town. She says his socks smell of betrayal and cheap fabric softener. No one’s seen him yet—but every time a new sock pattern shows up, she glares at the ceiling and whispers, ‘Nice try, Reggie.’",
+      image: "story-7.png",
     },
     {
       id: "panel_8",
       title: "The Truth",
-      text: "Martha doesn't actually dodge the sockballs - she's trying to catch them with her HANDS, but her arms are too short! When they hit her body, she absorbs their magic. When they hit her face, she sneezes uncontrollably for hours. She's been collecting your 'successful' throws this whole time!",
-      image: "martha3.png",
+      text: "Martha doesn’t dodge your throws—she’s trying to catch them. Her arms are just tragically short. When a sockball hits her square in the chest, she beams with pride. When it hits her face, she just laughs and mutters, ‘Reggie could never aim like that.’ Turns out, every throw—face shot included—helps her absorb more sockball magic.",
+      image: "story-8.png",
     },
     {
       id: "panel_9",
       title: "The Transformation",
-      text: "You've done it! Martha has collected enough sockballs to reverse the curse! As the final sockball hits her, there's a flash of light and... she grows half an inch taller. 'HALF AN INCH!' she screams. 'I need 10,000 MORE YEARS of this!' She raises your rent. You're stuck here forever. THE END... or is it?",
-      image: "martha-win.png",
+      text: "At last, her collection is complete. Thousands of sockballs whirl around her in a glowing cyclone. Then—FLASH!—she grows half an inch taller. ‘HALF AN INCH?!’ she roars. She raises your rent by 50%. Congratulations, you’ve unlocked New Game+ and eternal tenancy.",
+      image: "story-9.png",
     },
   ],
 };

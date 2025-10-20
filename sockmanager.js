@@ -359,6 +359,7 @@ class SockManager {
 
         if (animation.progress >= 1) {
           this.game.sockBalls++;
+          this.game.totalSockMatches++; // Track lifetime total matches
           this.sockballAnimations.splice(index, 1);
           this.createArrivalEffect(animation.targetX, animation.targetY);
         }

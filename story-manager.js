@@ -97,25 +97,30 @@ class StoryManager {
       padding: this.game.getScaledValue(40),
     };
 
-    // Position buttons
-    const buttonY = this.slideContainer.y + containerHeight - 60;
-    const buttonSpacing = this.game.getScaledValue(120);
+    // Position buttons in a row at the bottom
+    const buttonY =
+      this.slideContainer.y + containerHeight - this.game.getScaledValue(50);
+    const buttonWidth = this.game.getScaledValue(85);
+    const buttonHeight = this.game.getScaledValue(35);
+    const buttonSpacing = this.game.getScaledValue(15);
 
-    this.buttons.skip.x = this.slideContainer.x + 20;
+    // Skip button - far left
+    this.buttons.skip.x = this.slideContainer.x + this.game.getScaledValue(30);
     this.buttons.skip.y = buttonY;
-    this.buttons.skip.width = this.game.getScaledValue(100);
-    this.buttons.skip.height = this.game.getScaledValue(40);
+    this.buttons.skip.width = buttonWidth;
+    this.buttons.skip.height = buttonHeight;
 
-    this.buttons.previous.x =
-      canvasWidth / 2 - buttonSpacing - this.game.getScaledValue(50);
+    // Previous button - left of center
+    this.buttons.previous.x = canvasWidth / 2 - buttonWidth - buttonSpacing / 2;
     this.buttons.previous.y = buttonY;
-    this.buttons.previous.width = this.game.getScaledValue(100);
-    this.buttons.previous.height = this.game.getScaledValue(40);
+    this.buttons.previous.width = buttonWidth;
+    this.buttons.previous.height = buttonHeight;
 
+    // Next button - right of center
     this.buttons.next.x = canvasWidth / 2 + buttonSpacing / 2;
     this.buttons.next.y = buttonY;
-    this.buttons.next.width = this.game.getScaledValue(100);
-    this.buttons.next.height = this.game.getScaledValue(40);
+    this.buttons.next.width = buttonWidth;
+    this.buttons.next.height = buttonHeight;
   }
 
   update(deltaTime) {
@@ -376,7 +381,7 @@ class StoryManager {
 
   renderSlide(ctx, slide) {
     const container = this.slideContainer;
-    const contentY = container.y + container.padding * 1.5;
+    const contentY = container.y + container.padding;
 
     // Apply transition animation with slide effect
     let alpha = 1;
@@ -384,10 +389,14 @@ class StoryManager {
     if (this.isTransitioning) {
       // Ease in-out cubic for smooth transition
       const t = this.transitionProgress;
-      const easedProgress = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const easedProgress =
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
       alpha = Math.abs(Math.cos(easedProgress * Math.PI));
-      slideOffset = Math.sin(easedProgress * Math.PI) * this.transitionDirection * this.game.getScaledValue(50);
+      slideOffset =
+        Math.sin(easedProgress * Math.PI) *
+        this.transitionDirection *
+        this.game.getScaledValue(50);
     }
 
     ctx.save();
@@ -408,28 +417,45 @@ class StoryManager {
     // Image (if available) with scale animation
     const image = this.game.images[slide.image];
     if (image) {
-      const imageSize = this.game.getScaledValue(140);
-      const imageX = container.x + container.width / 2 - imageSize / 2;
-      const imageY = contentY + this.game.getScaledValue(70);
+      const maxImageSize = this.game.getScaledValue(168);
+
+      // Calculate aspect ratio preserving dimensions
+      const aspectRatio = image.width / image.height;
+      let imageWidth, imageHeight;
+
+      if (aspectRatio > 1) {
+        // Landscape - constrain width
+        imageWidth = maxImageSize;
+        imageHeight = maxImageSize / aspectRatio;
+      } else {
+        // Portrait or square - constrain height
+        imageHeight = maxImageSize;
+        imageWidth = maxImageSize * aspectRatio;
+      }
+
+      const imageX = container.x + container.width / 2 - imageWidth / 2;
+      // Center all images vertically in the same space
+      const imageAreaY = contentY + this.game.getScaledValue(70);
+      const imageY = imageAreaY + (maxImageSize - imageHeight) / 2;
 
       // Subtle pulse for image
       const imageScale = this.isTransitioning ? alpha : 1;
       ctx.save();
-      ctx.translate(imageX + imageSize / 2, imageY + imageSize / 2);
+      ctx.translate(imageX + imageWidth / 2, imageY + imageHeight / 2);
       ctx.scale(imageScale, imageScale);
-      ctx.translate(-(imageX + imageSize / 2), -(imageY + imageSize / 2));
+      ctx.translate(-(imageX + imageWidth / 2), -(imageY + imageHeight / 2));
 
       // Add subtle shadow to image
       ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
       ctx.shadowBlur = this.game.getScaledValue(10);
       ctx.shadowOffsetY = this.game.getScaledValue(5);
 
-      ctx.drawImage(image, imageX, imageY, imageSize, imageSize);
+      ctx.drawImage(image, imageX, imageY, imageWidth, imageHeight);
       ctx.restore();
     }
 
     // Text with better spacing and styling
-    const textY = contentY + this.game.getScaledValue(230);
+    const textY = contentY + this.game.getScaledValue(250);
 
     ctx.save();
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
@@ -514,31 +540,19 @@ class StoryManager {
 
   renderSlideIndicators(ctx) {
     const container = this.slideContainer;
-    const indicatorY = container.y + container.height - 100;
-    const indicatorSize = this.game.getScaledValue(10);
-    const indicatorSpacing = this.game.getScaledValue(15);
-    const totalWidth =
-      this.slides.length * indicatorSize +
-      (this.slides.length - 1) * indicatorSpacing;
-    let startX = container.x + container.width / 2 - totalWidth / 2;
 
-    for (let i = 0; i < this.slides.length; i++) {
-      ctx.fillStyle =
-        i === this.currentSlideIndex
-          ? "#FFD700"
-          : "rgba(255, 255, 255, 0.3)";
-      ctx.beginPath();
-      ctx.arc(
-        startX + indicatorSize / 2,
-        indicatorY,
-        indicatorSize / 2,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-
-      startX += indicatorSize + indicatorSpacing;
-    }
+    // Render page counter text only (no dots)
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `${this.currentSlideIndex + 1} / ${this.slides.length}`,
+      container.x + container.width - this.game.getScaledValue(30),
+      container.y + container.height - this.game.getScaledValue(50)
+    );
+    ctx.restore();
   }
 
   drawRoundedRect(ctx, x, y, width, height, radius) {

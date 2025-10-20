@@ -55,39 +55,54 @@ class MatchScreen extends Screen {
     const canvasWidth = this.game.getCanvasWidth();
     const canvasHeight = this.game.getCanvasHeight();
 
+    // Top bar configuration
+    const barHeight = this.game.getScaledValue(GameConfig.UI_BAR.height);
+    const barY = 0; // Top of screen
+    const barPadding = this.game.getScaledValue(GameConfig.UI_BAR.padding);
+    const panelSpacing = this.game.getScaledValue(GameConfig.UI_BAR.panelSpacing);
+
     return {
       ...baseLayout,
       titleX: this.game.getScaledValue(20),
       titleY: canvasHeight - this.game.getScaledValue(80),
       instructionX: this.game.getScaledValue(20),
       instructionY: canvasHeight - this.game.getScaledValue(40),
-      timeX: canvasWidth / 2,
-      timeY: this.game.getScaledValue(30),
       dropZoneSize: this.game.getScaledValue(80),
       dropZoneSpacing: this.game.getScaledValue(100),
-      dropZoneAreaY: canvasHeight / 3,
+      dropZoneAreaY: canvasHeight / 3 + this.game.getScaledValue(20), // Slightly lower to avoid top bar
       pairWidth: canvasWidth / GameConfig.DROP_TARGET_PAIRS,
       sockPileX: canvasWidth / 2,
-      sockPileY: canvasHeight - this.game.getScaledValue(100),
+      sockPileY: canvasHeight - this.game.getScaledValue(80), // Back to bottom
       sockPileSize: this.game.getScaledValue(120),
-      // Sockballs counter in far bottom-left
-      sockBallsX: this.game.getScaledValue(80),
-      sockBallsY: canvasHeight - this.game.getScaledValue(60),
       // Instructions beside sock pile
       instructionArrowX: canvasWidth / 2 + this.game.getScaledValue(90),
-      instructionArrowY: canvasHeight - this.game.getScaledValue(100),
-      streakX: canvasWidth - this.game.getScaledValue(20),
-      streakY: this.game.getScaledValue(90), // Moved below buttons
-      // Pause button in top-right
-      pauseButtonX: canvasWidth - this.game.getScaledValue(80),
-      pauseButtonY: this.game.getScaledValue(30),
-      pauseButtonWidth: this.game.getScaledValue(120),
-      pauseButtonHeight: this.game.getScaledValue(40),
-      // Exit button next to pause button
-      exitButtonX: canvasWidth - this.game.getScaledValue(220),
-      exitButtonY: this.game.getScaledValue(30),
-      exitButtonWidth: this.game.getScaledValue(120),
-      exitButtonHeight: this.game.getScaledValue(40),
+      instructionArrowY: canvasHeight - this.game.getScaledValue(80),
+
+      // Top bar layout
+      barY: barY,
+      barHeight: barHeight,
+      barPadding: barPadding,
+
+      // Top bar elements (left to right)
+      sockBallsX: barPadding + this.game.getScaledValue(80),
+      sockBallsY: barY + barHeight / 2,
+
+      timeX: barPadding + this.game.getScaledValue(240),
+      timeY: barY + barHeight / 2,
+
+      streakX: barPadding + this.game.getScaledValue(480),
+      streakY: barY + barHeight / 2,
+
+      // Buttons on the right side of top bar
+      pauseButtonX: canvasWidth - this.game.getScaledValue(240),
+      pauseButtonY: barY + barHeight / 2,
+      pauseButtonWidth: this.game.getScaledValue(100),
+      pauseButtonHeight: this.game.getScaledValue(50),
+
+      exitButtonX: canvasWidth - this.game.getScaledValue(120),
+      exitButtonY: barY + barHeight / 2,
+      exitButtonWidth: this.game.getScaledValue(100),
+      exitButtonHeight: this.game.getScaledValue(50),
     };
   }
 
@@ -649,6 +664,33 @@ class MatchScreen extends Screen {
 
           // Screen shake effect
           this.createScreenShake();
+
+          // Check if we've completed the required number of matches (stop timer immediately)
+          // Count BOTH animated sockballs AND queued sockballs
+          const level = GameConfig.LEVELS[this.game.currentLevel];
+          const totalSockballs = this.game.sockBalls + this.game.getSockballQueueLength();
+          if (level && totalSockballs >= level.sockPairs) {
+            // Mark level as completed to stop the timer
+            if (!this.levelCompleted) {
+              this.levelCompleted = true;
+
+              // Check if player finished within the time limit for time bonus
+              const timeLimit = level.matchingTime;
+              const timeElapsed = Math.floor(this.game.timeElapsed);
+              const timeRemaining = timeLimit - timeElapsed;
+
+              if (timeElapsed <= timeLimit) {
+                // Set time bonus flag - this will double rent payment points on level end screen
+                this.game.timeBonusEarned = true;
+                console.log(`⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`);
+              }
+
+              // Achievement: SPEEDY_MATCHER (complete with 30+ seconds remaining)
+              if (timeRemaining >= 30) {
+                this.game.unlockAchievement("speedy_matcher");
+              }
+            }
+          }
         } else {
           // MISMATCH - new behavior
           this.handleMismatch(pairZones[0].sock, pairZones[1].sock);
@@ -932,14 +974,6 @@ class MatchScreen extends Screen {
   renderMatchScreenUI(ctx) {
     const layout = this.layoutCache;
 
-    // Title at bottom left
-    this.renderText(ctx, "MATCH THOSE SOCKS", layout.titleX, layout.titleY, {
-      fontSize: layout.titleFontSize,
-      weight: "bold",
-      color: "rgba(255, 255, 255, 0.9)",
-      align: "left",
-    });
-
     // Instructions beside sock pile with arrow
     const instructionText = "Click sock pile";
     this.renderText(
@@ -975,7 +1009,47 @@ class MatchScreen extends Screen {
     ctx.fill();
     ctx.restore();
 
-    // Fix Bug #19-20: Time at top center - counting UP (elapsed) with time limit shown
+    // Render top bar
+    this.renderTopBar(ctx);
+  }
+
+  renderTopBar(ctx) {
+    const layout = this.layoutCache;
+    const canvasWidth = this.game.getCanvasWidth();
+
+    // Draw top bar background
+    ctx.save();
+    ctx.fillStyle = GameConfig.UI_BAR.backgroundColor;
+    ctx.fillRect(0, layout.barY, canvasWidth, layout.barHeight);
+
+    // Draw bottom border
+    ctx.strokeStyle = GameConfig.UI_BAR.borderColor;
+    ctx.lineWidth = this.game.getScaledValue(GameConfig.UI_BAR.borderWidth);
+    ctx.beginPath();
+    ctx.moveTo(0, layout.barY + layout.barHeight);
+    ctx.lineTo(canvasWidth, layout.barY + layout.barHeight);
+    ctx.stroke();
+    ctx.restore();
+
+    // Sockballs counter (left side)
+    const sockBallsX = layout.sockBallsX;
+    const sockBallsY = layout.sockBallsY;
+
+    this.renderText(ctx, "🧦", sockBallsX - this.game.getScaledValue(25), sockBallsY, {
+      fontSize: layout.headerFontSize,
+      align: "center",
+      baseline: "middle",
+    });
+
+    this.renderText(ctx, `${this.game.sockBalls}`, sockBallsX + this.game.getScaledValue(10), sockBallsY, {
+      fontSize: layout.headerFontSize,
+      align: "left",
+      baseline: "middle",
+      color: "rgba(255, 215, 0, 0.9)",
+      weight: "bold",
+    });
+
+    // Time display
     const timeElapsed = Math.max(0, Math.floor(this.game.timeElapsed));
     const timeLimit = GameConfig.LEVELS[this.game.currentLevel].matchingTime;
     const isOverTime = timeElapsed > timeLimit;
@@ -986,239 +1060,102 @@ class MatchScreen extends Screen {
       ? "rgba(255, 200, 68, 0.9)"
       : "rgba(255, 255, 255, 0.9)";
 
-    // Enhanced time display with background
-    ctx.save();
-    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-    ctx.strokeStyle = isOverTime ? "rgba(255, 68, 68, 0.6)" : "rgba(255, 255, 255, 0.3)";
-    ctx.lineWidth = 2;
-    const timeText = `Time: ${timeElapsed}s / ${timeLimit}s`;
-    const timeMetrics = ctx.measureText(timeText);
-    const timePadding = this.game.getScaledValue(16);
-    const timeBoxWidth = timeMetrics.width + timePadding * 10;
-    const timeBoxHeight = layout.headerFontSize + timePadding;
-
-    ctx.fillRect(
-      layout.timeX - timeBoxWidth / 2,
-      layout.timeY - timeBoxHeight / 2,
-      timeBoxWidth,
-      timeBoxHeight
-    );
-    ctx.strokeRect(
-      layout.timeX - timeBoxWidth / 2,
-      layout.timeY - timeBoxHeight / 2,
-      timeBoxWidth,
-      timeBoxHeight
-    );
-    ctx.restore();
-
-    this.renderText(ctx, timeText, layout.timeX, layout.timeY, {
+    this.renderText(ctx, "⏱️", layout.timeX - this.game.getScaledValue(50), layout.timeY, {
       fontSize: layout.headerFontSize,
       align: "center",
-      color: timeColor,
-      weight: "bold",
+      baseline: "middle",
     });
 
-    // Sock balls counter in far bottom-left
-    const sockBallsX = layout.sockBallsX;
-    const sockBallsY = layout.sockBallsY;
-
-    ctx.save();
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.strokeStyle = "rgba(255, 215, 0, 0.6)";
-    ctx.lineWidth = 2;
-    const sockBallText = `${this.game.sockBalls}`;
-    const sockBallMetrics = ctx.measureText(sockBallText);
-    const sockBallPadding = this.game.getScaledValue(12);
-    const sockBallBoxWidth = sockBallMetrics.width + sockBallPadding * 2;
-    const sockBallBoxHeight = layout.headerFontSize + sockBallPadding;
-
-    ctx.fillRect(
-      sockBallsX - sockBallBoxWidth / 2,
-      sockBallsY - sockBallBoxHeight / 2,
-      sockBallBoxWidth,
-      sockBallBoxHeight
-    );
-    ctx.strokeRect(
-      sockBallsX - sockBallBoxWidth / 2,
-      sockBallsY - sockBallBoxHeight / 2,
-      sockBallBoxWidth,
-      sockBallBoxHeight
-    );
-    ctx.restore();
-
-    this.renderText(ctx, sockBallText, sockBallsX, sockBallsY, {
-      fontSize: layout.headerFontSize,
-      align: "center",
-      color: "rgba(255, 215, 0, 0.9)",
+    const timeText = `${timeElapsed}s / ${timeLimit}s`;
+    this.renderText(ctx, timeText, layout.timeX, layout.timeY, {
+      fontSize: layout.bodyFontSize,
+      align: "left",
+      baseline: "middle",
+      color: timeColor,
       weight: "bold",
     });
 
     // Streak counter (only show if streak > 1)
     if (this.matchStreak > 1) {
-      ctx.save();
-      ctx.fillStyle = "rgba(138, 43, 226, 0.4)";
-      ctx.strokeStyle = "rgba(138, 43, 226, 0.8)";
-      ctx.lineWidth = 2;
-      const streakText = `${this.matchStreak}x STREAK!`;
-      const streakMetrics = ctx.measureText(streakText);
-      const streakPadding = this.game.getScaledValue(12);
-      const streakBoxWidth = streakMetrics.width + streakPadding * 10;
-      const streakBoxHeight = layout.headerFontSize + streakPadding;
-
-      ctx.fillRect(
-        layout.streakX - streakBoxWidth,
-        layout.streakY - streakBoxHeight / 2,
-        streakBoxWidth,
-        streakBoxHeight
-      );
-      ctx.strokeRect(
-        layout.streakX - streakBoxWidth,
-        layout.streakY - streakBoxHeight / 2,
-        streakBoxWidth,
-        streakBoxHeight
-      );
-      ctx.restore();
-
-      this.renderText(
-        ctx,
-        streakText,
-        layout.streakX - this.game.getScaledValue(10),
-        layout.streakY,
-        {
-          fontSize: layout.headerFontSize,
-          align: "right",
-          color: "rgba(255, 255, 255, 0.9)",
-          weight: "bold",
-        }
-      );
+      const streakText = `🔥 ${this.matchStreak}x STREAK`;
+      this.renderText(ctx, streakText, layout.streakX, layout.streakY, {
+        fontSize: layout.bodyFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 165, 0, 0.9)",
+        weight: "bold",
+      });
     }
 
-    // Exit button (left of pause button)
+    // Pause button
+    this.renderBottomBarButton(
+      ctx,
+      layout.pauseButtonX,
+      layout.pauseButtonY,
+      layout.pauseButtonWidth,
+      layout.pauseButtonHeight,
+      this.isPaused ? "▶ Resume" : "❚❚ Pause",
+      this.pauseButton.hovered,
+      "rgba(100, 100, 100, 0.8)"
+    );
+
+    // Exit button
+    this.renderBottomBarButton(
+      ctx,
+      layout.exitButtonX,
+      layout.exitButtonY,
+      layout.exitButtonWidth,
+      layout.exitButtonHeight,
+      "Exit",
+      this.exitButton.hovered,
+      "rgba(180, 40, 40, 0.8)"
+    );
+  }
+
+  renderBottomBarButton(ctx, x, y, width, height, text, isHovered, baseColor) {
     ctx.save();
-    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
-    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
+
+    const buttonLeft = x - width / 2;
+    const buttonTop = y - height / 2;
+    const radius = this.game.getScaledValue(6);
 
     // Button background
-    ctx.fillStyle = this.exitButton.hovered
-      ? "rgba(220, 60, 60, 0.9)"
-      : "rgba(180, 40, 40, 0.8)";
-    ctx.strokeStyle = this.exitButton.hovered
-      ? "rgba(255, 100, 100, 0.8)"
-      : "rgba(255, 80, 80, 0.5)";
+    ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+    ctx.strokeStyle = isHovered ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.4)";
     ctx.lineWidth = 2;
 
     // Rounded rectangle
-    const radius = this.game.getScaledValue(8);
     ctx.beginPath();
-    ctx.moveTo(exitButtonLeft + radius, exitButtonTop);
-    ctx.lineTo(exitButtonLeft + layout.exitButtonWidth - radius, exitButtonTop);
-    ctx.arcTo(
-      exitButtonLeft + layout.exitButtonWidth,
-      exitButtonTop,
-      exitButtonLeft + layout.exitButtonWidth,
-      exitButtonTop + radius,
-      radius
-    );
-    ctx.lineTo(
-      exitButtonLeft + layout.exitButtonWidth,
-      exitButtonTop + layout.exitButtonHeight - radius
-    );
-    ctx.arcTo(
-      exitButtonLeft + layout.exitButtonWidth,
-      exitButtonTop + layout.exitButtonHeight,
-      exitButtonLeft + layout.exitButtonWidth - radius,
-      exitButtonTop + layout.exitButtonHeight,
-      radius
-    );
-    ctx.lineTo(exitButtonLeft + radius, exitButtonTop + layout.exitButtonHeight);
-    ctx.arcTo(
-      exitButtonLeft,
-      exitButtonTop + layout.exitButtonHeight,
-      exitButtonLeft,
-      exitButtonTop + layout.exitButtonHeight - radius,
-      radius
-    );
-    ctx.lineTo(exitButtonLeft, exitButtonTop + radius);
-    ctx.arcTo(exitButtonLeft, exitButtonTop, exitButtonLeft + radius, exitButtonTop, radius);
+    ctx.moveTo(buttonLeft + radius, buttonTop);
+    ctx.lineTo(buttonLeft + width - radius, buttonTop);
+    ctx.arcTo(buttonLeft + width, buttonTop, buttonLeft + width, buttonTop + radius, radius);
+    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+    ctx.arcTo(buttonLeft + width, buttonTop + height, buttonLeft + width - radius, buttonTop + height, radius);
+    ctx.lineTo(buttonLeft + radius, buttonTop + height);
+    ctx.arcTo(buttonLeft, buttonTop + height, buttonLeft, buttonTop + height - radius, radius);
+    ctx.lineTo(buttonLeft, buttonTop + radius);
+    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Exit text
-    this.renderText(ctx, "Exit", layout.exitButtonX, layout.exitButtonY, {
-      fontSize: layout.bodyFontSize,
+    // Button text
+    this.renderText(ctx, text, x, y, {
+      fontSize: this.layoutCache.smallFontSize,
       align: "center",
+      baseline: "middle",
       color: "rgba(255, 255, 255, 0.9)",
       weight: "bold",
     });
 
     ctx.restore();
+  }
 
-    // Pause button in top-right
-    ctx.save();
-    const pauseButtonLeft = layout.pauseButtonX - layout.pauseButtonWidth / 2;
-    const pauseButtonTop = layout.pauseButtonY - layout.pauseButtonHeight / 2;
-
-    // Button background
-    ctx.fillStyle = this.pauseButton.hovered
-      ? "rgba(100, 100, 100, 0.8)"
-      : "rgba(60, 60, 60, 0.7)";
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-    ctx.lineWidth = 2;
-
-    // Rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(pauseButtonLeft + radius, pauseButtonTop);
-    ctx.lineTo(pauseButtonLeft + layout.pauseButtonWidth - radius, pauseButtonTop);
-    ctx.arcTo(
-      pauseButtonLeft + layout.pauseButtonWidth,
-      pauseButtonTop,
-      pauseButtonLeft + layout.pauseButtonWidth,
-      pauseButtonTop + radius,
-      radius
-    );
-    ctx.lineTo(
-      pauseButtonLeft + layout.pauseButtonWidth,
-      pauseButtonTop + layout.pauseButtonHeight - radius
-    );
-    ctx.arcTo(
-      pauseButtonLeft + layout.pauseButtonWidth,
-      pauseButtonTop + layout.pauseButtonHeight,
-      pauseButtonLeft + layout.pauseButtonWidth - radius,
-      pauseButtonTop + layout.pauseButtonHeight,
-      radius
-    );
-    ctx.lineTo(pauseButtonLeft + radius, pauseButtonTop + layout.pauseButtonHeight);
-    ctx.arcTo(
-      pauseButtonLeft,
-      pauseButtonTop + layout.pauseButtonHeight,
-      pauseButtonLeft,
-      pauseButtonTop + layout.pauseButtonHeight - radius,
-      radius
-    );
-    ctx.lineTo(pauseButtonLeft, pauseButtonTop + radius);
-    ctx.arcTo(pauseButtonLeft, pauseButtonTop, pauseButtonLeft + radius, pauseButtonTop, radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Pause icon or Resume text
-    if (this.isPaused) {
-      this.renderText(ctx, "▶", layout.pauseButtonX, layout.pauseButtonY, {
-        fontSize: layout.headerFontSize,
-        align: "center",
-        color: "rgba(255, 255, 255, 0.9)",
-        weight: "bold",
-      });
-    } else {
-      this.renderText(ctx, "❚❚", layout.pauseButtonX, layout.pauseButtonY, {
-        fontSize: layout.headerFontSize,
-        align: "center",
-        color: "rgba(255, 255, 255, 0.9)",
-        weight: "bold",
-      });
-    }
-
-    ctx.restore();
+  lightenColor(color) {
+    // Simple color lightening - increase opacity or brightness
+    return color.replace(/[\d.]+\)$/, (match) => {
+      const opacity = parseFloat(match);
+      return (Math.min(opacity + 0.1, 1.0)) + ")";
+    });
   }
 }

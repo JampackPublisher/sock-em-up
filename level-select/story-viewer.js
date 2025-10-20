@@ -81,6 +81,15 @@ class StoryViewer {
    * Update button hover state
    */
   updateButtonHover(x, y, layout) {
+    const unlockedCount = this.game.unlockedStoryPanels.filter(u => u).length;
+    const isDisabled = unlockedCount === 0;
+
+    // Don't allow hover on disabled button
+    if (isDisabled) {
+      this.button.hovered = false;
+      return;
+    }
+
     const buttonX = layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2;
     const buttonY = layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2;
 
@@ -150,20 +159,21 @@ class StoryViewer {
 
     const canvasWidth = this.game.getCanvasWidth();
     const canvasHeight = this.game.getCanvasHeight();
-    const modalHeight = this.game.getScaledValue(600);
+    const modalWidth = this.game.getScaledValue(700);
+    const modalHeight = this.game.getScaledValue(480); // Reduced from 600 by 20%
+    const modalX = (canvasWidth - modalWidth) / 2;
     const modalY = (canvasHeight - modalHeight) / 2;
-    const buttonY = modalY + modalHeight - this.game.getScaledValue(60);
-    const buttonWidth = this.game.getScaledValue(100);
+    const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
+    const buttonWidth = this.game.getScaledValue(85);
     const buttonHeight = this.game.getScaledValue(35);
-    const buttonSpacing = this.game.getScaledValue(120);
+    const buttonSpacing = this.game.getScaledValue(15);
 
     const unlockedPanels = this.getUnlockedPanels();
 
-    // Check close button
-    const closeX = canvasWidth / 2;
+    // Check close button (far left)
     if (this.ui.isPointInRect(x, y, {
-      x: closeX - buttonWidth / 2,
-      y: buttonY - buttonHeight / 2,
+      x: modalX + this.game.getScaledValue(30),
+      y: buttonY,
       width: buttonWidth,
       height: buttonHeight
     })) {
@@ -171,12 +181,12 @@ class StoryViewer {
       return true;
     }
 
-    // Check previous button
+    // Check previous button (left of center)
     if (this.currentPanel > 0) {
-      const prevX = canvasWidth / 2 - buttonSpacing;
+      const prevX = canvasWidth / 2 - buttonWidth - buttonSpacing / 2;
       if (this.ui.isPointInRect(x, y, {
-        x: prevX - buttonWidth / 2,
-        y: buttonY - buttonHeight / 2,
+        x: prevX,
+        y: buttonY,
         width: buttonWidth,
         height: buttonHeight
       })) {
@@ -185,12 +195,12 @@ class StoryViewer {
       }
     }
 
-    // Check next button
+    // Check next button (right of center)
     if (this.currentPanel < unlockedPanels.length - 1) {
-      const nextX = canvasWidth / 2 + buttonSpacing;
+      const nextX = canvasWidth / 2 + buttonSpacing / 2;
       if (this.ui.isPointInRect(x, y, {
-        x: nextX - buttonWidth / 2,
-        y: buttonY - buttonHeight / 2,
+        x: nextX,
+        y: buttonY,
         width: buttonWidth,
         height: buttonHeight
       })) {
@@ -207,7 +217,7 @@ class StoryViewer {
    */
   renderButton(ctx, layout) {
     const unlockedCount = this.game.unlockedStoryPanels.filter(u => u).length;
-    if (unlockedCount === 0) return; // Don't show button if no panels unlocked
+    const isDisabled = unlockedCount === 0;
 
     ctx.save();
 
@@ -221,7 +231,12 @@ class StoryViewer {
       x,
       y + layout.storyViewerButtonHeight
     );
-    if (this.button.hovered) {
+
+    if (isDisabled) {
+      // Disabled state - gray gradient
+      gradient.addColorStop(0, "rgba(80, 80, 80, 0.6)");
+      gradient.addColorStop(1, "rgba(60, 60, 60, 0.6)");
+    } else if (this.button.hovered) {
       gradient.addColorStop(0, "rgba(180, 100, 255, 0.95)");
       gradient.addColorStop(1, "rgba(130, 65, 225, 0.95)");
     } else {
@@ -230,12 +245,14 @@ class StoryViewer {
     }
     ctx.fillStyle = gradient;
 
-    if (this.button.hovered) {
+    if (this.button.hovered && !isDisabled) {
       ctx.shadowColor = "rgba(180, 100, 255, 0.6)";
       ctx.shadowBlur = this.game.getScaledValue(12);
     }
 
-    ctx.strokeStyle = this.button.hovered
+    ctx.strokeStyle = isDisabled
+      ? "rgba(100, 100, 100, 0.4)"
+      : this.button.hovered
       ? "rgba(200, 150, 255, 0.9)"
       : "rgba(150, 100, 237, 0.6)";
     ctx.lineWidth = this.game.getScaledValue(3);
@@ -253,7 +270,7 @@ class StoryViewer {
       layout.storyViewerButtonY,
       {
         fontSize: layout.smallFontSize,
-        color: "white",
+        color: isDisabled ? "rgba(150, 150, 150, 0.7)" : "white",
         weight: "bold",
         align: "center",
         baseline: "middle",
@@ -278,7 +295,7 @@ class StoryViewer {
 
     // Modal dimensions
     const modalWidth = this.game.getScaledValue(700);
-    const modalHeight = this.game.getScaledValue(600);
+    const modalHeight = this.game.getScaledValue(480); // Reduced from 600 by 20%
     const modalX = (canvasWidth - modalWidth) / 2;
     const modalY = (canvasHeight - modalHeight) / 2;
     const radius = this.game.getScaledValue(12);
@@ -351,7 +368,7 @@ class StoryViewer {
     this.renderPanelContent(ctx, layout, panel, modalX, modalY, modalWidth, modalHeight);
 
     // Render navigation buttons
-    this.renderNavigationButtons(ctx, modalY, modalHeight, unlockedPanels.length);
+    this.renderNavigationButtons(ctx, modalX, modalY, modalWidth, modalHeight, unlockedPanels.length);
 
     ctx.restore();
   }
@@ -363,26 +380,43 @@ class StoryViewer {
     const canvasWidth = this.game.getCanvasWidth();
 
     // Panel image
-    const imageSize = this.game.getScaledValue(120);
-    const imageX = canvasWidth / 2 - imageSize / 2;
+    const maxImageSize = this.game.getScaledValue(120);
     const imageY = modalY + this.game.getScaledValue(80);
 
     if (panel.image && this.game.images[panel.image]) {
+      const image = this.game.images[panel.image];
+
+      // Calculate aspect ratio preserving dimensions
+      const aspectRatio = image.width / image.height;
+      let imageWidth, imageHeight;
+
+      if (aspectRatio > 1) {
+        // Landscape - constrain width
+        imageWidth = maxImageSize;
+        imageHeight = maxImageSize / aspectRatio;
+      } else {
+        // Portrait or square - constrain height
+        imageHeight = maxImageSize;
+        imageWidth = maxImageSize * aspectRatio;
+      }
+
+      const imageX = canvasWidth / 2 - imageWidth / 2;
+
       ctx.save();
       ctx.shadowColor = "rgba(180, 100, 255, 0.3)";
       ctx.shadowBlur = this.game.getScaledValue(10);
       ctx.drawImage(
-        this.game.images[panel.image],
+        image,
         imageX,
         imageY,
-        imageSize,
-        imageSize
+        imageWidth,
+        imageHeight
       );
       ctx.restore();
     }
 
     // Panel title
-    const titleY = imageY + imageSize + this.game.getScaledValue(20);
+    const titleY = imageY + maxImageSize + this.game.getScaledValue(20);
     this.ui.renderText(
       ctx,
       panel.title,
@@ -425,74 +459,94 @@ class StoryViewer {
   /**
    * Render navigation buttons
    */
-  renderNavigationButtons(ctx, modalY, modalHeight, totalPanels) {
+  renderNavigationButtons(ctx, modalX, modalY, modalWidth, modalHeight, totalPanels) {
     const canvasWidth = this.game.getCanvasWidth();
-    const buttonY = modalY + modalHeight - this.game.getScaledValue(60);
-    const buttonWidth = this.game.getScaledValue(100);
+    const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
+    const buttonWidth = this.game.getScaledValue(85);
     const buttonHeight = this.game.getScaledValue(35);
-    const buttonSpacing = this.game.getScaledValue(120);
+    const buttonSpacing = this.game.getScaledValue(15);
 
-    // Previous button
-    if (this.currentPanel > 0) {
-      const prevX = canvasWidth / 2 - buttonSpacing;
-      this.renderNavigationButton(ctx, prevX, buttonY, buttonWidth, buttonHeight, "← Prev", false);
-    }
-
-    // Next button
-    if (this.currentPanel < totalPanels - 1) {
-      const nextX = canvasWidth / 2 + buttonSpacing;
-      this.renderNavigationButton(ctx, nextX, buttonY, buttonWidth, buttonHeight, "Next →", false);
-    }
-
-    // Close button
-    const closeX = canvasWidth / 2;
-    this.renderNavigationButton(ctx, closeX, buttonY, buttonWidth, buttonHeight, "Close", true);
-
-    // Navigation info
+    // Unlock progress message - above the buttons
+    const totalStoryPanels = this.game.unlockedStoryPanels.length;
+    const unlockedCount = this.getUnlockedPanels().length;
     this.ui.renderText(
       ctx,
-      `Panel ${this.currentPanel + 1} of ${totalPanels}`,
+      `Unlock the full story by beating every level (${unlockedCount}/${totalStoryPanels})`,
       canvasWidth / 2,
-      buttonY + this.game.getScaledValue(35),
+      buttonY - this.game.getScaledValue(25),
       {
         fontSize: this.game.getScaledValue(12),
-        color: "rgba(255, 255, 255, 0.5)",
+        color: unlockedCount === totalStoryPanels ? "rgba(255, 215, 0, 0.9)" : "rgba(180, 100, 255, 0.7)",
         align: "center",
       }
     );
+
+    // Close button - far left
+    this.renderNavigationButton(
+      ctx,
+      modalX + this.game.getScaledValue(30),
+      buttonY,
+      buttonWidth,
+      buttonHeight,
+      "Close",
+      true
+    );
+
+    // Previous button - left of center
+    if (this.currentPanel > 0) {
+      const prevX = canvasWidth / 2 - buttonWidth - buttonSpacing / 2;
+      this.renderNavigationButton(ctx, prevX, buttonY, buttonWidth, buttonHeight, "Previous", false);
+    }
+
+    // Next button - right of center
+    if (this.currentPanel < totalPanels - 1) {
+      const nextX = canvasWidth / 2 + buttonSpacing / 2;
+      this.renderNavigationButton(ctx, nextX, buttonY, buttonWidth, buttonHeight, "Next", false);
+    }
+
+    // Page counter - far right
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `${this.currentPanel + 1} / ${totalPanels}`,
+      modalX + modalWidth - this.game.getScaledValue(30),
+      buttonY + buttonHeight / 2
+    );
+    ctx.restore();
   }
 
   /**
    * Render a single navigation button
    */
   renderNavigationButton(ctx, x, y, width, height, text, isClose) {
-    const radius = this.game.getScaledValue(6);
-    const buttonX = x - width / 2;
-    const buttonY = y - height / 2;
+    const radius = this.game.getScaledValue(8);
 
     ctx.save();
 
-    const gradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + height);
+    const gradient = ctx.createLinearGradient(x, y, x, y + height);
     if (isClose) {
-      gradient.addColorStop(0, "rgba(200, 50, 50, 0.8)");
-      gradient.addColorStop(1, "rgba(150, 30, 30, 0.8)");
+      gradient.addColorStop(0, "rgba(136, 136, 136, 0.8)");
+      gradient.addColorStop(1, "rgba(100, 100, 100, 0.8)");
     } else {
-      gradient.addColorStop(0, "rgba(100, 150, 255, 0.8)");
-      gradient.addColorStop(1, "rgba(65, 105, 225, 0.8)");
+      gradient.addColorStop(0, "rgba(74, 144, 226, 0.8)");
+      gradient.addColorStop(1, "rgba(52, 101, 158, 0.8)");
     }
     ctx.fillStyle = gradient;
-    this.ui.drawRoundedRect(ctx, buttonX, buttonY, width, height, radius);
+    this.ui.drawRoundedRect(ctx, x, y, width, height, radius);
     ctx.fill();
 
-    ctx.strokeStyle = isClose ? "rgba(255, 100, 100, 0.6)" : "rgba(150, 200, 255, 0.6)";
+    ctx.strokeStyle = isClose ? "rgba(255, 255, 255, 0.5)" : "rgba(150, 200, 255, 0.6)";
     ctx.lineWidth = this.game.getScaledValue(2);
-    this.ui.drawRoundedRect(ctx, buttonX, buttonY, width, height, radius);
+    this.ui.drawRoundedRect(ctx, x, y, width, height, radius);
     ctx.stroke();
 
     ctx.restore();
 
-    this.ui.renderText(ctx, text, x, y, {
-      fontSize: this.game.getScaledValue(14),
+    this.ui.renderText(ctx, text, x + width / 2, y + height / 2, {
+      fontSize: this.game.getScaledValue(18),
       color: "white",
       weight: "bold",
       align: "center",

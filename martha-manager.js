@@ -97,6 +97,10 @@ class MarthaManager {
     this.rentDueMeter.current = 0;
     this.rentDueMeter.max = level.marthaWantsSockballs;
 
+    // Update bounds to match actual canvas size
+    this.bounds.right = this.game.getCanvasWidth();
+    this.bounds.bottom = this.game.getCanvasHeight();
+
     // Reset position to center area
     this.x = this.bounds.left + (this.bounds.right - this.bounds.left) / 2;
     this.y = this.bounds.top + (this.bounds.bottom - this.bounds.top) / 2;

@@ -239,8 +239,8 @@ class DifficultyModal {
   renderButton(ctx, button) {
     const difficultyMode = GameConfig.getDifficultyMode(button.difficulty);
     const isHovered = this.hoveredDifficulty === button.difficulty;
-    const isCompleted = this.game.difficultyCompletions[this.selectedLevel] &&
-                       this.game.difficultyCompletions[this.selectedLevel].includes(button.difficulty);
+    const isCompleted = this.game.completedLevelsByDifficulty[button.difficulty] &&
+                       this.game.completedLevelsByDifficulty[button.difficulty][this.selectedLevel];
 
     ctx.save();
 

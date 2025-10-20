@@ -62,30 +62,30 @@ class LevelSelect extends Screen {
     this.marthaWiggling = false;
     this.marthaImageSize = { width: 0, height: 0 };
 
-    // Martha quote system
+    // Martha quote system - rotating speech bubbles
     this.marthaQuotes = [
       "Rent's due, kiddo!",
-      "I could really up my rates if you just leave...",
+      "I could 10x my rates if you just leave...",
       "I want to evict you, so you better not pay rent!",
-      "Your lease is up for renewal... at TRIPLE the price!",
-      "You should go camping, I won't change the locks on your or anything....",
+      "Your lease is up for renewal... at 2x the price!",
+      "You should go camping, I won't change the locks on you or anything....",
       "You know what? Your socks STINK!",
       "I've got 10 other tenants ready to pay more!",
       "Ever thought about moving? Like, today?",
       "I wish I wasn't so tiny...",
       "I'm quadrupling rent next month!",
-      "Pack your socks, we're done here!",
+      "If you leave, don't take your socks!",
       "I need your room for my pet rock collection.",
       "Your neighbors complained about your sock sorting!",
       "Time to pay up or ship out!",
       "I'm thinking about converting this place to a juice bar!",
     ];
-    this.currentQuote = "";
+    this.currentQuoteIndex = 0;
+    this.currentQuote = this.marthaQuotes[0]; // Always show first quote on load
     this.quoteTimer = 0;
-    this.quoteInterval = this.getRandomQuoteInterval();
+    this.quoteRotationInterval = 7500; // Auto-rotate every 5 seconds
     this.quoteDisplayTime = 0;
-    this.quoteMaxDisplayTime = 4000; // Show quote for 4 seconds
-    this.showingQuote = false;
+    this.showingQuote = true; // Always showing a quote
 
     // Easter egg drop zones
     this.easterDropZones = [];
@@ -183,6 +183,7 @@ class LevelSelect extends Screen {
     this.uiHelpers = new UIHelpers(this.game);
     this.storyViewer = new StoryViewer(this.game, this.uiHelpers);
     this.difficultyModal = new DifficultyModal(this.game, this.uiHelpers);
+    this.difficultySelector = new DifficultySelector(this.game, this.uiHelpers);
 
     // Story unlock animation
     this.storyUnlockAnimation = {
@@ -194,9 +195,9 @@ class LevelSelect extends Screen {
   }
 
   calculateMarthaImageSize() {
-    const marthaImage = this.game.images["martha-demand.png"];
+    const marthaImage = this.game.images["martha-demand-level-select.png"];
     if (!marthaImage) {
-      console.warn("Martha image not found: martha-demand.png"); // Fix Bug #12: Add error logging
+      console.warn("Martha image not found: martha-demand-level-select.png"); // Fix Bug #12: Add error logging
       this.marthaImageSize = { width: 0, height: 0 };
       return;
     }
@@ -231,13 +232,18 @@ class LevelSelect extends Screen {
     this.calculateMarthaImageSize();
     const youWinImageSize = this.calculateYouWinImageSize();
 
-    return {
+    // Top bar configuration
+    const barHeight = this.game.getScaledValue(GameConfig.UI_BAR.height);
+    const barY = 0; // Top of screen
+    const barPadding = this.game.getScaledValue(GameConfig.UI_BAR.padding);
+
+    this.layoutCache = {
       ...baseLayout,
       logoX: canvasWidth / 2,
-      logoY: this.game.getScaledValue(80),
+      logoY: barHeight + this.game.getScaledValue(60), // Below top bar
       logoWidth: this.game.getScaledValue(200),
       logoHeight: this.game.getScaledValue(100),
-      instructionsY: this.game.getScaledValue(150),
+      instructionsY: barHeight + this.game.getScaledValue(140), // Below logo
       levelButtonSize: this.game.getScaledValue(
         this.levelConfig.baseButtonSize
       ),
@@ -252,9 +258,9 @@ class LevelSelect extends Screen {
         ((this.levelConfig.columns - 1) *
           this.game.getScaledValue(this.levelConfig.horizontalSpacing)) /
           2,
-      levelGridStartY: canvasHeight / 2 - this.game.getScaledValue(30),
+      levelGridStartY: canvasHeight / 2 + this.game.getScaledValue(0), // Centered vertically
       marthaX: this.game.getScaledValue(this.MARTHA_CONFIG.offsetX),
-      marthaY: this.game.getScaledValue(this.MARTHA_CONFIG.offsetY),
+      marthaY: barHeight + this.game.getScaledValue(this.MARTHA_CONFIG.offsetY), // Below top bar
       marthaWidth: this.marthaImageSize.width,
       marthaHeight: this.marthaImageSize.height,
       dropZoneSize: this.game.getScaledValue(this.DROP_ZONE_CONFIG.size),
@@ -262,33 +268,56 @@ class LevelSelect extends Screen {
       dropZone1Y: this.game.getScaledValue(this.DROP_ZONE_CONFIG.offsetY1),
       dropZone2X: this.game.getScaledValue(this.DROP_ZONE_CONFIG.offsetX),
       dropZone2Y: this.game.getScaledValue(this.DROP_ZONE_CONFIG.offsetY2),
-      statsX: this.game.getScaledValue(110),
-      statsY: canvasHeight - this.game.getScaledValue(80),
-      statsPanelWidth: this.game.getScaledValue(200),
-      statsPanelHeight: this.game.getScaledValue(40),
-      creditsButtonX: canvasWidth - this.game.getScaledValue(80),
-      creditsButtonY: this.game.getScaledValue(50),
-      creditsButtonWidth: this.game.getScaledValue(120),
-      creditsButtonHeight: this.game.getScaledValue(40),
-      storyReplayButtonX: canvasWidth - this.game.getScaledValue(80),
-      storyReplayButtonY: this.game.getScaledValue(110),
-      storyReplayButtonWidth: this.game.getScaledValue(120),
-      storyReplayButtonHeight: this.game.getScaledValue(40),
-      storyViewerButtonX: canvasWidth - this.game.getScaledValue(80),
-      storyViewerButtonY: this.game.getScaledValue(170),
-      storyViewerButtonWidth: this.game.getScaledValue(140),
-      storyViewerButtonHeight: this.game.getScaledValue(40),
+
+      // Top bar layout
+      barY: barY,
+      barHeight: barHeight,
+      barPadding: barPadding,
+
+      // Top bar elements (left to right)
+      statsX: barPadding + this.game.getScaledValue(100),
+      statsY: barY + barHeight / 2,
+
+      // Buttons in top bar (right side)
+      achievementsButtonX: canvasWidth - this.game.getScaledValue(510),
+      achievementsButtonY: barY + barHeight / 2,
+      achievementsButtonWidth: this.game.getScaledValue(120),
+      achievementsButtonHeight: this.game.getScaledValue(50),
+
+      storyReplayButtonX: canvasWidth - this.game.getScaledValue(380),
+      storyReplayButtonY: barY + barHeight / 2,
+      storyReplayButtonWidth: this.game.getScaledValue(110),
+      storyReplayButtonHeight: this.game.getScaledValue(50),
+
+      storyViewerButtonX: canvasWidth - this.game.getScaledValue(250),
+      storyViewerButtonY: barY + barHeight / 2,
+      storyViewerButtonWidth: this.game.getScaledValue(110),
+      storyViewerButtonHeight: this.game.getScaledValue(50),
+
+      creditsButtonX: canvasWidth - this.game.getScaledValue(120),
+      creditsButtonY: barY + barHeight / 2,
+      creditsButtonWidth: this.game.getScaledValue(100),
+      creditsButtonHeight: this.game.getScaledValue(50),
+
       achievementsDrawerWidth: this.game.getScaledValue(500),
       achievementsDrawerButtonX: this.game.getScaledValue(35),
       achievementsDrawerButtonY: this.game.getScaledValue(50),
       achievementsDrawerButtonSize: this.game.getScaledValue(50),
-      youWinX: canvasWidth / 2,
-      youWinY:
-        canvasHeight / 2 +
-        this.game.getScaledValue(this.YOU_WIN_CONFIG.offsetY),
+      youWinX:
+        canvasWidth - youWinImageSize.width / 2 - this.game.getScaledValue(50),
+      youWinY: canvasHeight / 2,
       youWinWidth: youWinImageSize.width,
       youWinHeight: youWinImageSize.height,
+
+      // Legacy panel values (no longer used)
+      statsPanelWidth: this.game.getScaledValue(200),
+      statsPanelHeight: this.game.getScaledValue(40),
     };
+
+    // Update difficulty selector layout BEFORE returning
+    this.difficultySelector.updateLayout(this.layoutCache);
+
+    return this.layoutCache;
   }
 
   onResize() {
@@ -375,25 +404,41 @@ class LevelSelect extends Screen {
     this.setupEasterDropZones();
     this.setupCreditsModal();
 
-    // Initialize quote system
+    // Initialize quote system - always show first quote on load
+    this.currentQuoteIndex = 0;
+    this.currentQuote = this.marthaQuotes[0];
     this.quoteTimer = 0;
-    this.quoteInterval = this.getRandomQuoteInterval();
-    this.showingQuote = false;
+    this.quoteDisplayTime = 0;
+    this.showingQuote = true;
 
     if (this.game.storyManager.shouldShowStory()) {
       this.game.storyManager.show();
     }
   }
 
-  getRandomQuoteInterval() {
-    // Random interval between 10-20 seconds (10000-20000 ms)
-    return 10000 + Math.random() * 10000;
+  // Cycle to the next quote in the rotation
+  cycleToNextQuote() {
+    this.currentQuoteIndex =
+      (this.currentQuoteIndex + 1) % this.marthaQuotes.length;
+    this.currentQuote = this.marthaQuotes[this.currentQuoteIndex];
+    this.quoteTimer = 0; // Reset the timer
+    this.quoteDisplayTime = 0;
   }
 
-  getRandomQuote() {
-    return this.marthaQuotes[
-      Math.floor(Math.random() * this.marthaQuotes.length)
-    ];
+  // Check if Martha was clicked
+  isMarthaClicked(x, y) {
+    const layout = this.layoutCache;
+    if (!layout.marthaX || !layout.marthaY) return false;
+
+    // Calculate click bounds (Martha is centered at marthaX, marthaY)
+    const marthaLeft = layout.marthaX - layout.marthaWidth / 2;
+    const marthaRight = layout.marthaX + layout.marthaWidth / 2;
+    const marthaTop = layout.marthaY - layout.marthaHeight / 2;
+    const marthaBottom = layout.marthaY + layout.marthaHeight / 2;
+
+    return (
+      x >= marthaLeft && x <= marthaRight && y >= marthaTop && y <= marthaBottom
+    );
   }
 
   cleanup() {
@@ -605,9 +650,11 @@ class LevelSelect extends Screen {
       }
     }
 
-    // NEW GAME+: Animate difficulty modal
-    // Update difficulty modal animations
-    this.difficultyModal.update(deltaTime);
+    // Only update difficulty UI if New Game+ is unlocked
+    if (this.game.highestUnlockedDifficulty > 0) {
+      this.difficultyModal.update(deltaTime);
+      this.difficultySelector.update(deltaTime);
+    }
 
     for (let i = 0; i < this.levelHoverAnimations.length; i++) {
       const isHovered = this.hoveredLevel === i;
@@ -631,7 +678,6 @@ class LevelSelect extends Screen {
       }
     }
 
-    // Update story viewer animations
     this.storyViewer.update(deltaTime);
 
     this.storyReplayButton.hoverProgress =
@@ -678,24 +724,9 @@ class LevelSelect extends Screen {
       }
     }
 
-    // Update Martha quote system
-    if (this.showingQuote) {
-      this.quoteDisplayTime += deltaTime;
-      if (this.quoteDisplayTime >= this.quoteMaxDisplayTime) {
-        // Hide quote and reset timer
-        this.showingQuote = false;
-        this.quoteDisplayTime = 0;
-        this.quoteTimer = 0;
-        this.quoteInterval = this.getRandomQuoteInterval();
-      }
-    } else {
-      this.quoteTimer += deltaTime;
-      if (this.quoteTimer >= this.quoteInterval) {
-        // Show new quote
-        this.currentQuote = this.getRandomQuote();
-        this.showingQuote = true;
-        this.quoteDisplayTime = 0;
-      }
+    this.quoteTimer += deltaTime;
+    if (this.quoteTimer >= this.quoteRotationInterval) {
+      this.cycleToNextQuote();
     }
 
     this.easterDropZones.forEach((zone) => {
@@ -752,7 +783,6 @@ class LevelSelect extends Screen {
   updateMenuSocks(deltaTime) {
     const timeMultiplier = deltaTime / 16.67;
 
-    // Fix Bug #21: Use filter instead of splice during iteration to avoid index issues
     this.menuSocks = this.menuSocks.filter((sock) => {
       if (sock === this.dragSock || this.isSockInDropZone(sock)) return true;
 
@@ -829,7 +859,6 @@ class LevelSelect extends Screen {
   }
 
   onMouseMove(x, y) {
-    // Fix: Track mouse velocity for drag momentum
     this.mouseVelocityX = x - this.lastMouseX;
     this.mouseVelocityY = y - this.lastMouseY;
     this.lastMouseX = x;
@@ -840,8 +869,7 @@ class LevelSelect extends Screen {
       return;
     }
 
-    // NEW GAME+: Handle difficulty modal hover
-    if (this.difficultyModal.isOpen) {
+    if (this.game.highestUnlockedDifficulty > 0 && this.difficultyModal.isOpen) {
       this.difficultyModal.updateHover(x, y);
       return;
     }
@@ -881,21 +909,19 @@ class LevelSelect extends Screen {
       height: layout.creditsButtonHeight,
     });
 
-    // Update story viewer button hover
     this.storyViewer.updateButtonHover(x, y, layout);
 
-    const drawerButtonX =
-      layout.achievementsDrawerButtonX -
-      layout.achievementsDrawerButtonSize / 2;
-    const drawerButtonY =
-      layout.achievementsDrawerButtonY -
-      layout.achievementsDrawerButtonSize / 2;
+    // Only update difficulty selector hover if New Game+ is unlocked
+    if (this.game.highestUnlockedDifficulty > 0) {
+      this.difficultySelector.updateButtonHover(x, y);
+      this.difficultySelector.updateDropdownHover(x, y);
+    }
 
     this.achievementsDrawer.button.hovered = this.isPointInRect(x, y, {
-      x: drawerButtonX,
-      y: drawerButtonY,
-      width: layout.achievementsDrawerButtonSize,
-      height: layout.achievementsDrawerButtonSize,
+      x: layout.achievementsButtonX - layout.achievementsButtonWidth / 2,
+      y: layout.achievementsButtonY - layout.achievementsButtonHeight / 2,
+      width: layout.achievementsButtonWidth,
+      height: layout.achievementsButtonHeight,
     });
 
     if (
@@ -931,7 +957,6 @@ class LevelSelect extends Screen {
           scrollPercentage * this.achievementsDrawer.maxScroll;
       }
 
-      // Close button hover detection
       const closeButtonSize = this.game.getScaledValue(30);
       const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
       const closeButtonY = this.game.getScaledValue(20);
@@ -996,7 +1021,6 @@ class LevelSelect extends Screen {
   }
 
   onMouseDown(x, y) {
-    // Check if close button was clicked (must be before scrollbar check)
     if (
       this.achievementsDrawer.closeButton.hovered &&
       this.achievementsDrawer.isOpen
@@ -1242,16 +1266,21 @@ class LevelSelect extends Screen {
       ) {
         this.difficultyModal.open(levelIndex);
       } else {
-        this.game.startLevel(levelIndex, 0); // Start at base difficulty
+        this.game.startLevel(levelIndex, this.game.selectedDifficulty);
       }
-    } else if (this.game.playerPoints >= GameConfig.LEVEL_COSTS[levelIndex]) {
-      this.game.audioManager.playSound("level-unlock", false, 0.6);
-      this.game.playerPoints -= GameConfig.LEVEL_COSTS[levelIndex];
-      this.game.unlockedLevels[levelIndex] = true;
-      this.game.saveGameData();
-      this.game.startLevel(levelIndex, 0); // Start at base difficulty
     } else {
-      this.game.audioManager.playSound("button-click", false, 0.2);
+      // Calculate cost based on current difficulty
+      const levelCost = GameConfig.getLevelCost(levelIndex, this.game.selectedDifficulty);
+
+      if (this.game.playerPoints >= levelCost) {
+        this.game.audioManager.playSound("level-unlock", false, 0.6);
+        this.game.playerPoints -= levelCost;
+        this.game.unlockedLevels[levelIndex] = true;
+        this.game.saveGameData();
+        this.game.startLevel(levelIndex, this.game.selectedDifficulty);
+      } else {
+        this.game.audioManager.playSound("button-click", false, 0.2);
+      }
     }
   }
 
@@ -1342,12 +1371,8 @@ class LevelSelect extends Screen {
       return;
     }
 
-    // NEW GAME+: Handle difficulty modal clicks
-    if (this.difficultyModal.handleClick(x, y)) {
-      return;
-    }
-
-    // Check close button FIRST and only if drawer is open
+    // Handle achievements drawer clicks FIRST (since it renders on top)
+    // Check close button first and only if drawer is open
     if (
       this.achievementsDrawer.closeButton.hovered &&
       this.achievementsDrawer.isOpen
@@ -1360,6 +1385,28 @@ class LevelSelect extends Screen {
     if (this.achievementsDrawer.button.hovered) {
       this.game.audioManager.playSound("button-click", false, 0.5);
       this.toggleAchievementsDrawer();
+      return true;
+    }
+
+    // NEW GAME+: Handle difficulty selector clicks (only if New Game+ unlocked)
+    if (this.game.highestUnlockedDifficulty > 0 && this.difficultySelector.handleClick(x, y)) {
+      // Clear cache and recalculate layout after difficulty change to update level display
+      this.clearLayoutCache();
+      this.calculateLayout();
+      return;
+    }
+
+    // NEW GAME+: Handle difficulty modal clicks (only if New Game+ unlocked)
+    if (this.game.highestUnlockedDifficulty > 0 && this.difficultyModal.handleClick(x, y)) {
+      return;
+    }
+
+    // Check if Martha was clicked to cycle quotes
+    if (this.isMarthaClicked(x, y)) {
+      this.cycleToNextQuote();
+      // Optional: play a sound effect or wiggle Martha
+      this.marthaWiggling = true;
+      this.marthaWiggleTimer = 0;
       return true;
     }
 
@@ -1799,14 +1846,20 @@ class LevelSelect extends Screen {
       this.renderYouWinGraphic(ctx);
     }
 
-    this.renderPlayerStats(ctx);
-    this.renderCreditsButton(ctx);
-    this.renderStoryReplayButton(ctx);
-    this.storyViewer.renderButton(ctx, this.layoutCache);
-    this.renderAchievementsDrawer(ctx);
+    this.renderTopBar(ctx);
 
-    // NEW GAME+: Render difficulty modal if open
-    this.difficultyModal.render(ctx, this.layoutCache);
+    // NEW GAME+: Render difficulty selector (only if New Game+ unlocked)
+    if (this.game.highestUnlockedDifficulty > 0) {
+      this.difficultySelector.render(ctx, this.layoutCache);
+    }
+
+    // NEW GAME+: Render difficulty modal if open (only if New Game+ unlocked)
+    if (this.game.highestUnlockedDifficulty > 0) {
+      this.difficultyModal.render(ctx, this.layoutCache);
+    }
+
+    // Render achievements drawer after difficulty modal so it appears on top
+    this.renderAchievementsDrawer(ctx);
 
     if (this.easterEggActive) {
       this.renderEasterDropZones(ctx);
@@ -1923,7 +1976,7 @@ class LevelSelect extends Screen {
   renderMarthaImage(ctx) {
     const layout = this.layoutCache;
 
-    if (this.game.images["martha-demand.png"]) {
+    if (this.game.images["martha-demand-level-select.png"]) {
       ctx.save();
 
       if (this.marthaWiggling) {
@@ -1934,7 +1987,7 @@ class LevelSelect extends Screen {
       }
 
       ctx.drawImage(
-        this.game.images["martha-demand.png"],
+        this.game.images["martha-demand-level-select.png"],
         -layout.marthaWidth / 2,
         -layout.marthaHeight / 2,
         layout.marthaWidth,
@@ -1953,14 +2006,8 @@ class LevelSelect extends Screen {
   renderMarthaQuote(ctx, layout) {
     ctx.save();
 
-    // Calculate fade in/out alpha
-    const fadeTime = 500; // 500ms fade
-    let alpha = 1;
-    if (this.quoteDisplayTime < fadeTime) {
-      alpha = this.quoteDisplayTime / fadeTime;
-    } else if (this.quoteDisplayTime > this.quoteMaxDisplayTime - fadeTime) {
-      alpha = (this.quoteMaxDisplayTime - this.quoteDisplayTime) / fadeTime;
-    }
+    // No fade animations - quote is always fully visible
+    const alpha = 1;
 
     // Position quote bubble below Martha
     const bubbleX = layout.marthaX;
@@ -2061,6 +2108,232 @@ class LevelSelect extends Screen {
     });
 
     ctx.restore();
+  }
+
+  renderTopBar(ctx) {
+    const layout = this.layoutCache;
+    const canvasWidth = this.game.getCanvasWidth();
+
+    // Draw top bar background
+    ctx.save();
+    ctx.fillStyle = GameConfig.UI_BAR.backgroundColor;
+    ctx.fillRect(0, layout.barY, canvasWidth, layout.barHeight);
+
+    // Draw bottom border
+    ctx.strokeStyle = GameConfig.UI_BAR.borderColor;
+    ctx.lineWidth = this.game.getScaledValue(GameConfig.UI_BAR.borderWidth);
+    ctx.beginPath();
+    ctx.moveTo(0, layout.barY + layout.barHeight);
+    ctx.lineTo(canvasWidth, layout.barY + layout.barHeight);
+    ctx.stroke();
+    ctx.restore();
+
+    // Player stats (left side)
+    this.renderText(
+      ctx,
+      "💰",
+      layout.statsX - this.game.getScaledValue(50),
+      layout.statsY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "center",
+        baseline: "middle",
+      }
+    );
+
+    this.renderText(
+      ctx,
+      `${this.game.playerPoints}`,
+      layout.statsX,
+      layout.statsY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 215, 0, 0.9)",
+        weight: "bold",
+      }
+    );
+
+    this.renderText(
+      ctx,
+      "🧦",
+      layout.statsX + this.game.getScaledValue(120),
+      layout.statsY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "center",
+        baseline: "middle",
+      }
+    );
+
+    this.renderText(
+      ctx,
+      `${this.game.totalSockMatches}`,
+      layout.statsX + this.game.getScaledValue(155),
+      layout.statsY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 215, 0, 0.9)",
+        weight: "bold",
+      }
+    );
+
+    // Buttons (right side)
+    this.renderTopBarButton(
+      ctx,
+      layout.achievementsButtonX,
+      layout.achievementsButtonY,
+      layout.achievementsButtonWidth,
+      layout.achievementsButtonHeight,
+      "Trophies",
+      this.achievementsDrawer.button.hovered,
+      "rgba(218, 165, 32, 0.8)"
+    );
+
+    this.renderTopBarButton(
+      ctx,
+      layout.storyReplayButtonX,
+      layout.storyReplayButtonY,
+      layout.storyReplayButtonWidth,
+      layout.storyReplayButtonHeight,
+      "How to Play",
+      this.storyReplayButton.hovered,
+      "rgba(70, 130, 180, 0.8)"
+    );
+
+    // Calculate unlocked lore count
+    const unlockedLoreCount = this.game.unlockedStoryPanels.filter(
+      (u) => u
+    ).length;
+
+    this.renderTopBarButton(
+      ctx,
+      layout.storyViewerButtonX,
+      layout.storyViewerButtonY,
+      layout.storyViewerButtonWidth,
+      layout.storyViewerButtonHeight,
+      "Story",
+      this.storyViewer.button.hovered,
+      "rgba(138, 43, 226, 0.8)",
+      `${unlockedLoreCount}/9`,
+      unlockedLoreCount === 0 // isDisabled when no panels unlocked
+    );
+
+    this.renderTopBarButton(
+      ctx,
+      layout.creditsButtonX,
+      layout.creditsButtonY,
+      layout.creditsButtonWidth,
+      layout.creditsButtonHeight,
+      "Credits",
+      this.creditsButton.hovered,
+      "rgba(100, 100, 100, 0.8)"
+    );
+  }
+
+  renderTopBarButton(
+    ctx,
+    x,
+    y,
+    width,
+    height,
+    text,
+    isHovered,
+    baseColor,
+    countBadge = null,
+    isDisabled = false
+  ) {
+    ctx.save();
+
+    const buttonLeft = x - width / 2;
+    const buttonTop = y - height / 2;
+    const radius = this.game.getScaledValue(6);
+
+    // Button background
+    if (isDisabled) {
+      ctx.fillStyle = "rgba(80, 80, 80, 0.5)";
+    } else {
+      ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+    }
+
+    ctx.strokeStyle = isDisabled
+      ? "rgba(100, 100, 100, 0.3)"
+      : isHovered
+      ? "rgba(255, 255, 255, 0.8)"
+      : "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 2;
+
+    // Rounded rectangle
+    ctx.beginPath();
+    ctx.moveTo(buttonLeft + radius, buttonTop);
+    ctx.lineTo(buttonLeft + width - radius, buttonTop);
+    ctx.arcTo(
+      buttonLeft + width,
+      buttonTop,
+      buttonLeft + width,
+      buttonTop + radius,
+      radius
+    );
+    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+    ctx.arcTo(
+      buttonLeft + width,
+      buttonTop + height,
+      buttonLeft + width - radius,
+      buttonTop + height,
+      radius
+    );
+    ctx.lineTo(buttonLeft + radius, buttonTop + height);
+    ctx.arcTo(
+      buttonLeft,
+      buttonTop + height,
+      buttonLeft,
+      buttonTop + height - radius,
+      radius
+    );
+    ctx.lineTo(buttonLeft, buttonTop + radius);
+    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Button text
+    this.renderText(
+      ctx,
+      text,
+      x,
+      y - (countBadge ? this.game.getScaledValue(6) : 0),
+      {
+        fontSize: this.layoutCache.smallFontSize,
+        align: "center",
+        baseline: "middle",
+        color: isDisabled ? "rgba(150, 150, 150, 0.6)" : "rgba(255, 255, 255, 0.9)",
+        weight: "bold",
+      }
+    );
+
+    // Count badge below text
+    if (countBadge) {
+      this.renderText(ctx, countBadge, x, y + this.game.getScaledValue(12), {
+        fontSize: this.game.getScaledValue(12),
+        align: "center",
+        baseline: "middle",
+        color: isDisabled ? "rgba(150, 150, 150, 0.6)" : "rgba(255, 215, 0, 0.9)",
+        weight: "bold",
+      });
+    }
+
+    ctx.restore();
+  }
+
+  lightenColor(color) {
+    // Simple color lightening - increase opacity or brightness
+    return color.replace(/[\d.]+\)$/, (match) => {
+      const opacity = parseFloat(match);
+      return Math.min(opacity + 0.1, 1.0) + ")";
+    });
   }
 
   renderCreditsButton(ctx) {
@@ -2243,7 +2516,7 @@ class LevelSelect extends Screen {
 
     this.renderText(
       ctx,
-      "📖 Story",
+      "📖 How to Play",
       layout.storyReplayButtonX,
       layout.storyReplayButtonY,
       {
@@ -2330,7 +2603,7 @@ class LevelSelect extends Screen {
 
     this.renderText(
       ctx,
-      `📚 Panels (${unlockedCount}/9)`,
+      "📚 Story",
       layout.storyViewerButtonX,
       layout.storyViewerButtonY,
       {
@@ -2345,69 +2618,7 @@ class LevelSelect extends Screen {
     const layout = this.layoutCache;
     const progress = this.achievementsDrawer.animationProgress;
 
-    const buttonX = layout.achievementsDrawerButtonX;
-    const buttonY = layout.achievementsDrawerButtonY;
-    const buttonSize = layout.achievementsDrawerButtonSize;
-
-    ctx.save();
-
-    const gradient = ctx.createLinearGradient(
-      buttonX - buttonSize / 2,
-      buttonY - buttonSize / 2,
-      buttonX - buttonSize / 2,
-      buttonY + buttonSize / 2
-    );
-    if (this.achievementsDrawer.button.hovered) {
-      gradient.addColorStop(0, "rgba(255, 215, 0, 0.95)");
-      gradient.addColorStop(1, "rgba(255, 165, 0, 0.95)");
-    } else {
-      gradient.addColorStop(0, "rgba(220, 180, 0, 0.85)");
-      gradient.addColorStop(1, "rgba(200, 140, 0, 0.85)");
-    }
-    ctx.fillStyle = gradient;
-
-    if (this.achievementsDrawer.button.hovered) {
-      ctx.shadowColor = "rgba(255, 215, 0, 0.6)";
-      ctx.shadowBlur = this.game.getScaledValue(12);
-    }
-
-    ctx.strokeStyle = this.achievementsDrawer.button.hovered
-      ? "rgba(255, 230, 100, 0.9)"
-      : "rgba(220, 180, 0, 0.6)";
-    ctx.lineWidth = this.game.getScaledValue(3);
-
-    const radius = this.game.getScaledValue(8);
-    const x = buttonX - buttonSize / 2;
-    const y = buttonY - buttonSize / 2;
-
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + buttonSize - radius, y);
-    ctx.quadraticCurveTo(x + buttonSize, y, x + buttonSize, y + radius);
-    ctx.lineTo(x + buttonSize, y + buttonSize - radius);
-    ctx.quadraticCurveTo(
-      x + buttonSize,
-      y + buttonSize,
-      x + buttonSize - radius,
-      y + buttonSize
-    );
-    ctx.lineTo(x + radius, y + buttonSize);
-    ctx.quadraticCurveTo(x, y + buttonSize, x, y + buttonSize - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.restore();
-
-    this.renderText(ctx, "🏆", buttonX, buttonY, {
-      fontSize: this.game.getScaledValue(28),
-      align: "center",
-      baseline: "middle",
-    });
-
+    // Button is now rendered in the top bar, so only render the drawer
     if (progress > 0) {
       const drawerWidth = layout.achievementsDrawerWidth;
       const drawerX = -drawerWidth + drawerWidth * progress;
@@ -3259,8 +3470,8 @@ class LevelSelect extends Screen {
     const isUnlocked = this.game.unlockedLevels[levelIndex];
     const isCompleted = this.game.completedLevels[levelIndex];
     const isHovered = this.hoveredLevel === levelIndex;
-    const isAffordable =
-      this.game.playerPoints >= GameConfig.LEVEL_COSTS[levelIndex];
+    const levelCost = GameConfig.getLevelCost(levelIndex, this.game.selectedDifficulty);
+    const isAffordable = this.game.playerPoints >= levelCost;
 
     const hoverProgress = this.levelHoverAnimations[levelIndex] || 0;
     const pulseTimer = this.levelPulseTimers[levelIndex] || 0;
@@ -3460,7 +3671,7 @@ class LevelSelect extends Screen {
       ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
       ctx.shadowBlur = this.game.getScaledValue(4);
-      ctx.fillText("🔒", x, y);
+      ctx.fillText("🔒", x, y - this.game.getScaledValue(15));
       ctx.restore();
 
       ctx.save();
@@ -3468,9 +3679,9 @@ class LevelSelect extends Screen {
       ctx.shadowBlur = this.game.getScaledValue(4);
       this.renderText(
         ctx,
-        `💎 ${GameConfig.LEVEL_COSTS[levelIndex]}`,
+        `💰 ${levelCost}`,
         x,
-        y - this.game.getScaledValue(55),
+        y + this.game.getScaledValue(15),
         {
           fontSize: layout.smallFontSize + 2,
           color: isAffordable ? "#90EE90" : "#FFB6C1",
@@ -3715,10 +3926,8 @@ class LevelSelect extends Screen {
     const isHovered =
       this.difficultyModal.hoveredDifficulty === button.difficulty;
     const isCompleted =
-      this.game.difficultyCompletions[this.difficultyModal.selectedLevel] &&
-      this.game.difficultyCompletions[
-        this.difficultyModal.selectedLevel
-      ].includes(button.difficulty);
+      this.game.completedLevelsByDifficulty[button.difficulty] &&
+      this.game.completedLevelsByDifficulty[button.difficulty][this.difficultyModal.selectedLevel];
 
     ctx.save();
 

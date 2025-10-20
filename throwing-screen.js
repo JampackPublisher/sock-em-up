@@ -157,30 +157,36 @@ class ThrowingScreen extends Screen {
 
   createLayoutCache() {
     const cache = super.createLayoutCache();
+    const canvasWidth = this.game.getCanvasWidth();
+    const canvasHeight = this.game.getCanvasHeight();
 
-    // Position UI elements near launch position (bottom area)
-    const panelSpacing = this.game.getScaledValue(10);
+    // Top bar configuration
+    const barHeight = this.game.getScaledValue(GameConfig.UI_BAR.height);
+    const barY = 0; // Top of screen
+    const barPadding = this.game.getScaledValue(GameConfig.UI_BAR.padding);
 
-    // Sockball counter positioned near launch area
-    cache.sockballCounterPos = {
-      x: this.launchPosition.x + this.game.getScaledValue(80),
-      y: this.game.getCanvasHeight() - this.game.getScaledValue(100),
-    };
+    // Top bar layout
+    cache.barY = barY;
+    cache.barHeight = barHeight;
+    cache.barPadding = barPadding;
 
-    // Martha status positioned next to sockball counter
-    cache.marthaStatusPos = {
-      x:
-        cache.sockballCounterPos.x +
-        this.game.getScaledValue(160) +
-        panelSpacing,
-      y: cache.sockballCounterPos.y,
-    };
+    // Top bar elements (left to right) - spaced to avoid overlapping
+    cache.sockballCounterX = barPadding + this.game.getScaledValue(60);
+    cache.sockballCounterY = barY + barHeight / 2;
 
-    // Cooldown bar positioned below counters - moved up 20px
-    cache.cooldownBarPos = {
-      x: cache.sockballCounterPos.x,
-      y: cache.sockballCounterPos.y + this.game.getScaledValue(70), // Changed from 70 to 50 (20px up)
-    };
+    cache.marthaStatusX = barPadding + this.game.getScaledValue(200);
+    cache.marthaStatusY = barY + barHeight / 2;
+
+    cache.cooldownBarX = barPadding + this.game.getScaledValue(360);
+    cache.cooldownBarY = barY + barHeight / 2;
+    cache.cooldownBarWidth = this.game.getScaledValue(160);
+    cache.cooldownBarHeight = this.game.getScaledValue(30);
+
+    // Exit button on right side of top bar
+    cache.exitButtonX = canvasWidth - this.game.getScaledValue(70);
+    cache.exitButtonY = barY + barHeight / 2;
+    cache.exitButtonWidth = this.game.getScaledValue(90);
+    cache.exitButtonHeight = this.game.getScaledValue(50);
 
     return cache;
   }
@@ -471,6 +477,11 @@ class ThrowingScreen extends Screen {
         if (movingAway && sockball.bestZoneEntered) {
           const catchQuality = this.marthaManager.hitBySockball(sockball, sockball.bestZoneEntered);
           if (catchQuality) {
+            // Track catch quality counts for score screen
+            if (this.game.catchQualityCounts && this.game.catchQualityCounts[catchQuality] !== undefined) {
+              this.game.catchQualityCounts[catchQuality]++;
+            }
+
             // Play particle burst sound when sockball hits Martha
             this.game.audioManager.playSound("particle-burst", false, 0.4);
 
@@ -806,95 +817,66 @@ class ThrowingScreen extends Screen {
   }
 
   renderUI(ctx) {
-    const counterX = this.layoutCache.sockballCounterPos.x;
-    const counterY = this.layoutCache.sockballCounterPos.y;
-    const panelWidth = this.game.getScaledValue(150);
-    const panelHeight = this.game.getScaledValue(60);
+    const layout = this.layoutCache;
+    const canvasWidth = this.game.getCanvasWidth();
 
-    // Sockball counter panel
-    this.renderPanel(
-      ctx,
-      counterX,
-      counterY,
-      panelWidth,
-      panelHeight,
-      "primary"
-    );
+    // Draw top bar background
+    ctx.save();
+    ctx.fillStyle = GameConfig.UI_BAR.backgroundColor;
+    ctx.fillRect(0, layout.barY, canvasWidth, layout.barHeight);
 
-    this.renderText(
-      ctx,
-      "Sockballs:",
-      counterX + panelWidth / 2,
-      counterY + this.game.getScaledValue(20),
-      { fontSize: this.layoutCache.bodyFontSize, align: "center" }
-    );
+    // Draw bottom border
+    ctx.strokeStyle = GameConfig.UI_BAR.borderColor;
+    ctx.lineWidth = this.game.getScaledValue(GameConfig.UI_BAR.borderWidth);
+    ctx.beginPath();
+    ctx.moveTo(0, layout.barY + layout.barHeight);
+    ctx.lineTo(canvasWidth, layout.barY + layout.barHeight);
+    ctx.stroke();
+    ctx.restore();
 
-    this.renderText(
-      ctx,
-      this.availableSockballs.toString(),
-      counterX + panelWidth / 2,
-      counterY + this.game.getScaledValue(40),
-      {
-        fontSize: this.layoutCache.headerFontSize,
-        color: "#ffd700",
-        align: "center",
-      }
-    );
+    // Sockballs counter (left side)
+    this.renderText(ctx, "🎯", layout.sockballCounterX - this.game.getScaledValue(25), layout.sockballCounterY, {
+      fontSize: layout.headerFontSize,
+      align: "center",
+      baseline: "middle",
+    });
 
-    // Martha status panel
-    const statusX = this.layoutCache.marthaStatusPos.x;
-    const statusY = this.layoutCache.marthaStatusPos.y;
-    const statusWidth = this.game.getScaledValue(180);
-    const statusHeight = this.game.getScaledValue(60);
+    this.renderText(ctx, `${this.availableSockballs}`, layout.sockballCounterX + this.game.getScaledValue(10), layout.sockballCounterY, {
+      fontSize: layout.headerFontSize,
+      align: "left",
+      baseline: "middle",
+      color: "rgba(255, 215, 0, 0.9)",
+      weight: "bold",
+    });
 
-    this.renderPanel(
-      ctx,
-      statusX,
-      statusY,
-      statusWidth,
-      statusHeight,
-      "secondary"
-    );
+    // Martha status
+    this.renderText(ctx, "Martha:", layout.marthaStatusX - this.game.getScaledValue(60), layout.marthaStatusY, {
+      fontSize: layout.bodyFontSize,
+      align: "left",
+      baseline: "middle",
+      color: "rgba(255, 255, 255, 0.9)",
+    });
 
-    this.renderText(
-      ctx,
-      "Martha wants:",
-      statusX + statusWidth / 2,
-      statusY + this.game.getScaledValue(20),
-      { fontSize: this.layoutCache.bodyFontSize, align: "center" }
-    );
+    const marthaText = `${this.marthaManager.collectedSockballs}/${this.marthaManager.sockballsWanted}`;
+    this.renderText(ctx, marthaText, layout.marthaStatusX + this.game.getScaledValue(35), layout.marthaStatusY, {
+      fontSize: layout.headerFontSize,
+      align: "left",
+      baseline: "middle",
+      color: "rgba(76, 175, 80, 0.9)",
+      weight: "bold",
+    });
 
-    this.renderText(
-      ctx,
-      `${this.marthaManager.collectedSockballs}/${this.marthaManager.sockballsWanted}`,
-      statusX + statusWidth / 2,
-      statusY + this.game.getScaledValue(40),
-      {
-        fontSize: this.layoutCache.headerFontSize,
-        color: "#4caf50",
-        align: "center",
-      }
-    );
-
-    // Throw cooldown
-    const cooldownX = this.layoutCache.cooldownBarPos.x;
-    const cooldownY = this.layoutCache.cooldownBarPos.y;
-    const cooldownWidth = this.game.getScaledValue(250);
-    const cooldownHeight = this.game.getScaledValue(20);
-
+    // Throw cooldown bar
     const currentTime = Date.now();
     const timeSinceLastThrow = currentTime - this.lastThrowTime;
-    const cooldownProgress = Math.min(
-      timeSinceLastThrow / this.throwCooldownDuration,
-      1
-    );
+    const cooldownProgress = Math.min(timeSinceLastThrow / this.throwCooldownDuration, 1);
 
     this.renderProgressBar(
       ctx,
-      cooldownX,
-      cooldownY,
-      cooldownWidth,
-      cooldownHeight,
+      layout.cooldownBarX,
+      layout.cooldownBarY - layout.cooldownBarHeight / 2,
+      layout.cooldownBarWidth,
+      layout.cooldownBarHeight,
       cooldownProgress,
       {
         fillColor: cooldownProgress >= 1 ? "#4caf50" : "#ffc107",
@@ -904,87 +886,84 @@ class ThrowingScreen extends Screen {
 
     this.renderText(
       ctx,
-      cooldownProgress >= 1 ? "READY TO THROW" : "RECHARGING...",
-      cooldownX + cooldownWidth / 2,
-      cooldownY + cooldownHeight / 2,
+      cooldownProgress >= 1 ? "READY!" : "Recharging...",
+      layout.cooldownBarX + layout.cooldownBarWidth / 2,
+      layout.cooldownBarY,
       {
         fontSize: this.layoutCache.smallFontSize,
         align: "center",
         baseline: "middle",
+        color: "rgba(255, 255, 255, 0.9)",
+        weight: "bold",
       }
     );
 
-    // Exit button in top-right
-    const exitButtonX = this.game.getCanvasWidth() - this.game.getScaledValue(80);
-    const exitButtonY = this.game.getScaledValue(30);
-    const exitButtonWidth = this.game.getScaledValue(120);
-    const exitButtonHeight = this.game.getScaledValue(40);
-
-    const exitButtonLeft = exitButtonX - exitButtonWidth / 2;
-    const exitButtonTop = exitButtonY - exitButtonHeight / 2;
+    // Exit button (reusing Match Screen button renderer)
+    this.renderBottomBarButton(
+      ctx,
+      layout.exitButtonX,
+      layout.exitButtonY,
+      layout.exitButtonWidth,
+      layout.exitButtonHeight,
+      "Exit",
+      this.exitButton.hovered,
+      "rgba(180, 40, 40, 0.8)"
+    );
 
     // Update exit button bounds for click detection
+    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
+    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
     this.exitButton.x = exitButtonLeft;
     this.exitButton.y = exitButtonTop;
-    this.exitButton.width = exitButtonWidth;
-    this.exitButton.height = exitButtonHeight;
+    this.exitButton.width = layout.exitButtonWidth;
+    this.exitButton.height = layout.exitButtonHeight;
+  }
 
+  renderBottomBarButton(ctx, x, y, width, height, text, isHovered, baseColor) {
     ctx.save();
+
+    const buttonLeft = x - width / 2;
+    const buttonTop = y - height / 2;
+    const radius = this.game.getScaledValue(6);
+
     // Button background
-    ctx.fillStyle = this.exitButton.hovered
-      ? "rgba(220, 60, 60, 0.9)"
-      : "rgba(180, 40, 40, 0.8)";
-    ctx.strokeStyle = this.exitButton.hovered
-      ? "rgba(255, 100, 100, 0.8)"
-      : "rgba(255, 80, 80, 0.5)";
+    ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+    ctx.strokeStyle = isHovered ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.4)";
     ctx.lineWidth = 2;
 
     // Rounded rectangle
-    const radius = this.game.getScaledValue(8);
     ctx.beginPath();
-    ctx.moveTo(exitButtonLeft + radius, exitButtonTop);
-    ctx.lineTo(exitButtonLeft + exitButtonWidth - radius, exitButtonTop);
-    ctx.arcTo(
-      exitButtonLeft + exitButtonWidth,
-      exitButtonTop,
-      exitButtonLeft + exitButtonWidth,
-      exitButtonTop + radius,
-      radius
-    );
-    ctx.lineTo(
-      exitButtonLeft + exitButtonWidth,
-      exitButtonTop + exitButtonHeight - radius
-    );
-    ctx.arcTo(
-      exitButtonLeft + exitButtonWidth,
-      exitButtonTop + exitButtonHeight,
-      exitButtonLeft + exitButtonWidth - radius,
-      exitButtonTop + exitButtonHeight,
-      radius
-    );
-    ctx.lineTo(exitButtonLeft + radius, exitButtonTop + exitButtonHeight);
-    ctx.arcTo(
-      exitButtonLeft,
-      exitButtonTop + exitButtonHeight,
-      exitButtonLeft,
-      exitButtonTop + exitButtonHeight - radius,
-      radius
-    );
-    ctx.lineTo(exitButtonLeft, exitButtonTop + radius);
-    ctx.arcTo(exitButtonLeft, exitButtonTop, exitButtonLeft + radius, exitButtonTop, radius);
+    ctx.moveTo(buttonLeft + radius, buttonTop);
+    ctx.lineTo(buttonLeft + width - radius, buttonTop);
+    ctx.arcTo(buttonLeft + width, buttonTop, buttonLeft + width, buttonTop + radius, radius);
+    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+    ctx.arcTo(buttonLeft + width, buttonTop + height, buttonLeft + width - radius, buttonTop + height, radius);
+    ctx.lineTo(buttonLeft + radius, buttonTop + height);
+    ctx.arcTo(buttonLeft, buttonTop + height, buttonLeft, buttonTop + height - radius, radius);
+    ctx.lineTo(buttonLeft, buttonTop + radius);
+    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Exit text
-    this.renderText(ctx, "Exit", exitButtonX, exitButtonY, {
-      fontSize: this.layoutCache.bodyFontSize,
+    // Button text
+    this.renderText(ctx, text, x, y, {
+      fontSize: this.layoutCache.smallFontSize,
       align: "center",
+      baseline: "middle",
       color: "rgba(255, 255, 255, 0.9)",
       weight: "bold",
     });
 
     ctx.restore();
+  }
+
+  lightenColor(color) {
+    // Simple color lightening - increase opacity or brightness
+    return color.replace(/[\d.]+\)$/, (match) => {
+      const opacity = parseFloat(match);
+      return (Math.min(opacity + 0.1, 1.0)) + ")";
+    });
   }
 
   renderMessage(ctx) {
