@@ -3,7 +3,7 @@ body {
   margin: 0;
   padding: 0;
   background: #2c3e50;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   overflow: hidden;
   user-select: none;
 }
@@ -231,7 +231,7 @@ canvas {
   border-radius: 12px;
   padding: 15px 20px;
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px);
@@ -250,7 +250,7 @@ canvas {
   border-radius: 15px;
   padding: 20px 30px;
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   text-align: center;
   z-index: 250;
   box-shadow: 0 6px 25px rgba(75, 0, 130, 0.4);
@@ -289,7 +289,7 @@ canvas {
   border-radius: 15px;
   padding: 20px 40px;
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 22px;
   font-weight: bold;
   text-align: center;
@@ -324,7 +324,7 @@ canvas {
   border-radius: 12px;
   padding: 15px 25px;
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 24px;
   font-weight: bold;
   text-align: center;

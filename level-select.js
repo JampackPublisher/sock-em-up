@@ -14,8 +14,8 @@ class LevelSelect extends Screen {
       snapDistance: 40,
       size: 60,
       offsetX: 1200,
-      offsetY1: 300,
-      offsetY2: 400,
+      offsetY1: 200,
+      offsetY2: 300,
       outerBorderWidth: 10,
       glowDuration: 20,
     };
@@ -23,14 +23,14 @@ class LevelSelect extends Screen {
     this.MARTHA_CONFIG = {
       offsetX: 150,
       offsetY: 250,
-      maxSize: 200, // Increased from 120 to make Martha bigger
+      maxSize: 200,
       maintainAspectRatio: true,
     };
 
     // You Win graphic configuration
     this.YOU_WIN_CONFIG = {
-      maxWidth: 300 * 1.25,
-      maxHeight: 120 * 1.25,
+      maxWidth: 300 * 1.75,
+      maxHeight: 120 * 1.75,
       offsetY: 225,
       glowIntensity: 15,
       pulseSpeed: 0.005,
@@ -51,6 +51,11 @@ class LevelSelect extends Screen {
     this.currentSockType = 1;
     this.dropZoneHover = null;
 
+    // Logo click effect
+    this.logoPressed = false;
+    this.logoPressTimer = 0;
+    this.logoPressScale = 1.0;
+
     // Drag momentum tracking (fix for sock physics)
     this.lastMouseX = 0;
     this.lastMouseY = 0;
@@ -61,6 +66,15 @@ class LevelSelect extends Screen {
     this.marthaWiggleTimer = 0;
     this.marthaWiggling = false;
     this.marthaImageSize = { width: 0, height: 0 };
+
+    // Martha laughing animation state
+    this.marthaLaughing = false;
+    this.marthaLaughFrameIndex = 0;
+    this.marthaLaughAnimationTimer = 0;
+
+    // You Win animation state
+    this.youWinFrameIndex = 0;
+    this.youWinAnimationTimer = 0;
 
     // Martha quote system - rotating speech bubbles
     this.marthaQuotes = [
@@ -81,11 +95,11 @@ class LevelSelect extends Screen {
       "I'm thinking about converting this place to a juice bar!",
     ];
     this.currentQuoteIndex = 0;
-    this.currentQuote = this.marthaQuotes[0]; // Always show first quote on load
+    this.currentQuote = this.marthaQuotes[0];
     this.quoteTimer = 0;
-    this.quoteRotationInterval = 7500; // Auto-rotate every 5 seconds
+    this.quoteRotationInterval = 7500;
     this.quoteDisplayTime = 0;
-    this.showingQuote = true; // Always showing a quote
+    this.showingQuote = true;
 
     // Easter egg drop zones
     this.easterDropZones = [];
@@ -154,6 +168,17 @@ class LevelSelect extends Screen {
       hovered: false,
     };
 
+    this.videoButton = {
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 40,
+      hovered: false,
+    };
+
+    this.videoPlayerActive = false;
+    this.videoElement = null;
+
     // Achievements drawer
     this.achievementsDrawer = {
       isOpen: false,
@@ -184,20 +209,12 @@ class LevelSelect extends Screen {
     this.storyViewer = new StoryViewer(this.game, this.uiHelpers);
     this.difficultyModal = new DifficultyModal(this.game, this.uiHelpers);
     this.difficultySelector = new DifficultySelector(this.game, this.uiHelpers);
-
-    // Story unlock animation
-    this.storyUnlockAnimation = {
-      isPlaying: false,
-      panelIndex: -1,
-      animationProgress: 0,
-      duration: 2000, // 2 seconds
-    };
   }
 
   calculateMarthaImageSize() {
     const marthaImage = this.game.images["martha-demand-level-select.png"];
     if (!marthaImage) {
-      console.warn("Martha image not found: martha-demand-level-select.png"); // Fix Bug #12: Add error logging
+      console.warn("Martha image not found: martha-demand-level-select.png");
       this.marthaImageSize = { width: 0, height: 0 };
       return;
     }
@@ -237,13 +254,25 @@ class LevelSelect extends Screen {
     const barY = 0; // Top of screen
     const barPadding = this.game.getScaledValue(GameConfig.UI_BAR.padding);
 
+    // Calculate logo dimensions maintaining aspect ratio
+    const logoImage = this.game.images["logo.png"];
+    let logoWidth = this.game.getScaledValue(200);
+    let logoHeight = this.game.getScaledValue(100);
+
+    if (logoImage && logoImage.complete && logoImage.naturalWidth > 0) {
+      const logoAspectRatio = logoImage.naturalWidth / logoImage.naturalHeight;
+      const maxLogoWidth = this.game.getScaledValue(200);
+      logoWidth = maxLogoWidth;
+      logoHeight = maxLogoWidth / logoAspectRatio;
+    }
+
     this.layoutCache = {
       ...baseLayout,
       logoX: canvasWidth / 2,
-      logoY: barHeight + this.game.getScaledValue(60), // Below top bar
-      logoWidth: this.game.getScaledValue(200),
-      logoHeight: this.game.getScaledValue(100),
-      instructionsY: barHeight + this.game.getScaledValue(140), // Below logo
+      logoY: barHeight + this.game.getScaledValue(100),
+      logoWidth: logoWidth,
+      logoHeight: logoHeight,
+      instructionsY: barHeight + this.game.getScaledValue(140),
       levelButtonSize: this.game.getScaledValue(
         this.levelConfig.baseButtonSize
       ),
@@ -258,9 +287,9 @@ class LevelSelect extends Screen {
         ((this.levelConfig.columns - 1) *
           this.game.getScaledValue(this.levelConfig.horizontalSpacing)) /
           2,
-      levelGridStartY: canvasHeight / 2 + this.game.getScaledValue(0), // Centered vertically
+      levelGridStartY: canvasHeight / 2 + this.game.getScaledValue(0),
       marthaX: this.game.getScaledValue(this.MARTHA_CONFIG.offsetX),
-      marthaY: barHeight + this.game.getScaledValue(this.MARTHA_CONFIG.offsetY), // Below top bar
+      marthaY: barHeight + this.game.getScaledValue(this.MARTHA_CONFIG.offsetY),
       marthaWidth: this.marthaImageSize.width,
       marthaHeight: this.marthaImageSize.height,
       dropZoneSize: this.game.getScaledValue(this.DROP_ZONE_CONFIG.size),
@@ -274,30 +303,36 @@ class LevelSelect extends Screen {
       barHeight: barHeight,
       barPadding: barPadding,
 
-      // Top bar elements (left to right)
       statsX: barPadding + this.game.getScaledValue(100),
       statsY: barY + barHeight / 2,
 
-      // Buttons in top bar (right side)
-      achievementsButtonX: canvasWidth - this.game.getScaledValue(510),
-      achievementsButtonY: barY + barHeight / 2,
-      achievementsButtonWidth: this.game.getScaledValue(120),
-      achievementsButtonHeight: this.game.getScaledValue(50),
+      buttonHeight: this.game.getScaledValue(35),
+      rightEdgeMargin: this.game.getScaledValue(15),
+      buttonGap: this.game.getScaledValue(15),
 
-      storyReplayButtonX: canvasWidth - this.game.getScaledValue(380),
-      storyReplayButtonY: barY + barHeight / 2,
-      storyReplayButtonWidth: this.game.getScaledValue(110),
-      storyReplayButtonHeight: this.game.getScaledValue(50),
-
-      storyViewerButtonX: canvasWidth - this.game.getScaledValue(250),
-      storyViewerButtonY: barY + barHeight / 2,
-      storyViewerButtonWidth: this.game.getScaledValue(110),
-      storyViewerButtonHeight: this.game.getScaledValue(50),
-
-      creditsButtonX: canvasWidth - this.game.getScaledValue(120),
+      // Credits button (rightmost)
+      creditsButtonHeight: this.game.getScaledValue(35),
+      creditsButtonWidth: this.game.getScaledValue(80),
+      creditsButtonX: canvasWidth - this.game.getScaledValue(60),
       creditsButtonY: barY + barHeight / 2,
-      creditsButtonWidth: this.game.getScaledValue(100),
-      creditsButtonHeight: this.game.getScaledValue(50),
+
+      // Story button
+      storyViewerButtonHeight: this.game.getScaledValue(35),
+      storyViewerButtonWidth: this.game.getScaledValue(90),
+      storyViewerButtonX: canvasWidth - this.game.getScaledValue(160),
+      storyViewerButtonY: barY + barHeight / 2,
+
+      // How to Play button
+      storyReplayButtonHeight: this.game.getScaledValue(35),
+      storyReplayButtonWidth: this.game.getScaledValue(120),
+      storyReplayButtonX: canvasWidth - this.game.getScaledValue(275),
+      storyReplayButtonY: barY + barHeight / 2,
+
+      // Trophies button (leftmost)
+      achievementsButtonHeight: this.game.getScaledValue(35),
+      achievementsButtonWidth: this.game.getScaledValue(100),
+      achievementsButtonX: canvasWidth - this.game.getScaledValue(405),
+      achievementsButtonY: barY + barHeight / 2,
 
       achievementsDrawerWidth: this.game.getScaledValue(500),
       achievementsDrawerButtonX: this.game.getScaledValue(35),
@@ -309,12 +344,19 @@ class LevelSelect extends Screen {
       youWinWidth: youWinImageSize.width,
       youWinHeight: youWinImageSize.height,
 
-      // Legacy panel values (no longer used)
+      videoButtonX:
+        canvasWidth - youWinImageSize.width / 2 - this.game.getScaledValue(50),
+      videoButtonY:
+        canvasHeight / 2 +
+        youWinImageSize.height / 2 +
+        this.game.getScaledValue(80),
+      videoButtonWidth: this.game.getScaledValue(400),
+      videoButtonHeight: this.game.getScaledValue(100),
+
       statsPanelWidth: this.game.getScaledValue(200),
       statsPanelHeight: this.game.getScaledValue(40),
     };
 
-    // Update difficulty selector layout BEFORE returning
     this.difficultySelector.updateLayout(this.layoutCache);
 
     return this.layoutCache;
@@ -338,35 +380,41 @@ class LevelSelect extends Screen {
   }
 
   setupEasterDropZones() {
-    this.clearLayoutCache();
-    this.calculateLayout();
+    // Only initialize drop zones if they don't exist yet
+    // This preserves their state and positions when returning to the level select screen
+    if (this.easterDropZones.length === 0) {
+      this.clearLayoutCache();
+      this.calculateLayout();
 
-    const layout = this.layoutCache;
+      const layout = this.layoutCache;
 
-    this.easterDropZones = [
-      {
-        x: layout.dropZone1X,
-        y: layout.dropZone1Y,
-        width: layout.dropZoneSize,
-        height: layout.dropZoneSize,
-        sock: null,
-        glowEffect: 0,
-        hoverEffect: 0,
-        snapEffect: 0,
-        id: 0,
-      },
-      {
-        x: layout.dropZone2X,
-        y: layout.dropZone2Y,
-        width: layout.dropZoneSize,
-        height: layout.dropZoneSize,
-        sock: null,
-        glowEffect: 0,
-        hoverEffect: 0,
-        snapEffect: 0,
-        id: 1,
-      },
-    ];
+      this.easterDropZones = [
+        {
+          x: layout.dropZone1X,
+          y: layout.dropZone1Y,
+          width: layout.dropZoneSize,
+          height: layout.dropZoneSize,
+          sock: null,
+          glowEffect: 0,
+          hoverEffect: 0,
+          snapEffect: 0,
+          id: 0,
+        },
+        {
+          x: layout.dropZone2X,
+          y: layout.dropZone2Y,
+          width: layout.dropZoneSize,
+          height: layout.dropZoneSize,
+          sock: null,
+          glowEffect: 0,
+          hoverEffect: 0,
+          snapEffect: 0,
+          id: 1,
+        },
+      ];
+    }
+    // If drop zones already exist, don't recalculate or update anything
+    // This keeps them in the same position throughout the game session
   }
 
   setup() {
@@ -375,12 +423,8 @@ class LevelSelect extends Screen {
     console.log("🎵 Level select setup - starting menu music");
     this.game.audioManager.playMusic("menu-music", true);
 
-    // Check for newly unlocked story panel
     if (this.game.newStoryPanelUnlocked >= 0) {
-      this.storyUnlockAnimation.isPlaying = true;
-      this.storyUnlockAnimation.panelIndex = this.game.newStoryPanelUnlocked;
-      this.storyUnlockAnimation.animationProgress = 0;
-      this.game.newStoryPanelUnlocked = -1; // Reset flag
+      this.game.newStoryPanelUnlocked = -1;
     }
 
     const canvasWidth = this.game.getCanvasWidth();
@@ -404,7 +448,6 @@ class LevelSelect extends Screen {
     this.setupEasterDropZones();
     this.setupCreditsModal();
 
-    // Initialize quote system - always show first quote on load
     this.currentQuoteIndex = 0;
     this.currentQuote = this.marthaQuotes[0];
     this.quoteTimer = 0;
@@ -430,7 +473,6 @@ class LevelSelect extends Screen {
     const layout = this.layoutCache;
     if (!layout.marthaX || !layout.marthaY) return false;
 
-    // Calculate click bounds (Martha is centered at marthaX, marthaY)
     const marthaLeft = layout.marthaX - layout.marthaWidth / 2;
     const marthaRight = layout.marthaX + layout.marthaWidth / 2;
     const marthaTop = layout.marthaY - layout.marthaHeight / 2;
@@ -447,7 +489,8 @@ class LevelSelect extends Screen {
     console.log("🎵 Level select cleanup - stopping menu music");
     this.game.audioManager.stopMusic();
 
-    // Remove event listeners before hiding credits
+    this.closeVideoPlayer();
+
     this.removeCreditsEventListeners();
 
     if (this.creditsOpen) {
@@ -459,6 +502,20 @@ class LevelSelect extends Screen {
       creditsModal.remove();
     }
     this.creditsModal = null;
+
+    // Clear bonus/easter egg socks
+    this.menuSocks = [];
+    this.easterEggActive = false;
+    this.isDragging = false;
+    this.dragSock = null;
+
+    // Reset drop zones - clear any socks in the drop zones
+    this.easterDropZones.forEach((zone) => {
+      zone.sock = null;
+      zone.glowEffect = 0;
+      zone.hoverEffect = 0;
+      zone.snapEffect = 0;
+    });
   }
 
   setupCreditsModal() {
@@ -467,7 +524,7 @@ class LevelSelect extends Screen {
         <div class="credits-modal" id="creditsModal">
           <div class="credits-content">
             <div class="credits-header">
-              <img src="images/company-logo.png" alt="Weird Demon Games" class="company-logo" />
+              <div class="company-logo-sprite" id="companyLogoSprite"></div>
               <h2>Weird Demon Games</h2>
               <button class="close-credits" id="closeCredits">×</button>
             </div>
@@ -507,7 +564,11 @@ class LevelSelect extends Screen {
                   </div>
                   <div class="credit-role">
                     <span class="role">Lead Programmer</span>
-                    <span class="name">Claude Sonnet 4</span>
+                    <span class="name">Claude Sonnet 4.5</span>
+                  </div>
+                  <div class="credit-role">
+                    <span class="role">Animations</span>
+                    <span class="name">Ludo</span>
                   </div>
                 </div>
                 
@@ -528,14 +589,12 @@ class LevelSelect extends Screen {
   }
 
   setupCreditsEventListeners() {
-    // Fix Bug #5: Remove old listeners before adding new ones to prevent duplication
     if (this.creditsEventHandlers) {
       this.removeCreditsEventListeners();
     }
 
     const closeCredits = document.getElementById("closeCredits");
 
-    // Store bound handlers for cleanup
     this.creditsEventHandlers = {
       closeClick: () => {
         this.game.audioManager.playSound("button-click", false, 0.5);
@@ -641,20 +700,22 @@ class LevelSelect extends Screen {
       return;
     }
 
-    // Update story unlock animation
-    if (this.storyUnlockAnimation.isPlaying) {
-      this.storyUnlockAnimation.animationProgress += deltaTime * 0.0008;
-      if (this.storyUnlockAnimation.animationProgress >= 1) {
-        this.storyUnlockAnimation.isPlaying = false;
-        this.storyUnlockAnimation.animationProgress = 0;
-      }
-    }
-
     // Only update difficulty UI if New Game+ is unlocked
     if (this.game.highestUnlockedDifficulty > 0) {
       this.difficultyModal.update(deltaTime);
       this.difficultySelector.update(deltaTime);
     }
+
+    // Update feedback manager to keep achievement/story notifications visible
+    // Tell feedbackManager that Martha is off-screen to prevent dialogue bubbles from showing
+    const layout = this.layoutCache;
+    this.game.feedbackManager.updateMarthaPosition(
+      layout.marthaX || 0,
+      layout.marthaY || 0,
+      layout.marthaWidth || 0,
+      false // Martha is not "on screen" in the throwing screen context
+    );
+    this.game.feedbackManager.update(deltaTime);
 
     for (let i = 0; i < this.levelHoverAnimations.length; i++) {
       const isHovered = this.hoveredLevel === i;
@@ -673,12 +734,33 @@ class LevelSelect extends Screen {
         );
       }
 
-      if (this.game.unlockedLevels[i] && !this.game.completedLevels[i]) {
+      if (this.game.unlockedLevels[i]) {
         this.levelPulseTimers[i] += deltaTime * 0.002;
       }
     }
 
     this.storyViewer.update(deltaTime);
+
+    // Update logo press animation
+    if (this.logoPressed) {
+      this.logoPressTimer += deltaTime;
+      const pressDuration = 150; // Duration in milliseconds for the press effect
+
+      if (this.logoPressTimer < pressDuration) {
+        // Animate to 95% scale
+        this.logoPressScale =
+          1.0 - (this.logoPressTimer / pressDuration) * 0.05;
+      } else if (this.logoPressTimer < pressDuration * 2) {
+        // Animate back to 100% scale
+        const returnProgress =
+          (this.logoPressTimer - pressDuration) / pressDuration;
+        this.logoPressScale = 0.95 + returnProgress * 0.05;
+      } else {
+        // Animation complete
+        this.logoPressed = false;
+        this.logoPressScale = 1.0;
+      }
+    }
 
     this.storyReplayButton.hoverProgress =
       this.storyReplayButton.hoverProgress || 0;
@@ -721,6 +803,41 @@ class LevelSelect extends Screen {
       if (this.marthaWiggleTimer >= 1000) {
         this.marthaWiggling = false;
         this.marthaWiggleTimer = 0;
+      }
+    }
+
+    // Update Martha laughing animation
+    if (this.marthaLaughing) {
+      this.marthaLaughAnimationTimer += deltaTime;
+      const spritesheet = GameConfig.MARTHA_LAUGHING_SPRITESHEET;
+      const frameTime = 1000 / spritesheet.fps;
+
+      if (this.marthaLaughAnimationTimer >= frameTime) {
+        this.marthaLaughFrameIndex++;
+        this.marthaLaughAnimationTimer = 0;
+
+        // Check if animation is complete
+        if (this.marthaLaughFrameIndex >= spritesheet.animationFrames.length) {
+          this.marthaLaughing = false;
+          this.marthaLaughFrameIndex = 0;
+        }
+      }
+    }
+
+    // Update You Win animation (loops continuously when all levels complete)
+    if (this.areAllLevelsCompleted()) {
+      this.youWinAnimationTimer += deltaTime;
+      const youWinSpritesheet = GameConfig.YOU_WIN_SPRITESHEET;
+      const frameTime = 1000 / youWinSpritesheet.fps;
+
+      if (this.youWinAnimationTimer >= frameTime) {
+        this.youWinFrameIndex++;
+        this.youWinAnimationTimer = 0;
+
+        // Loop the animation
+        if (this.youWinFrameIndex >= youWinSpritesheet.animationFrames.length) {
+          this.youWinFrameIndex = 0;
+        }
       }
     }
 
@@ -807,7 +924,7 @@ class LevelSelect extends Screen {
           this.isDragging = false;
           this.dragSock = null;
         }
-        return false; // Remove from array
+        return false;
       }
 
       if (
@@ -821,7 +938,7 @@ class LevelSelect extends Screen {
         }
       }
 
-      return true; // Keep in array
+      return true;
     });
   }
 
@@ -869,7 +986,15 @@ class LevelSelect extends Screen {
       return;
     }
 
-    if (this.game.highestUnlockedDifficulty > 0 && this.difficultyModal.isOpen) {
+    if (this.storyViewer.isOpen) {
+      this.storyViewer.handleMouseMove(x, y);
+      return;
+    }
+
+    if (
+      this.game.highestUnlockedDifficulty > 0 &&
+      this.difficultyModal.isOpen
+    ) {
       this.difficultyModal.updateHover(x, y);
       return;
     }
@@ -908,6 +1033,20 @@ class LevelSelect extends Screen {
       width: layout.creditsButtonWidth,
       height: layout.creditsButtonHeight,
     });
+
+    // Video button hover (only if all levels completed)
+    if (this.areAllLevelsCompleted()) {
+      const videoButtonX = layout.videoButtonX - layout.videoButtonWidth / 2;
+      const videoButtonY = layout.videoButtonY - layout.videoButtonHeight / 2;
+      this.videoButton.hovered = this.isPointInRect(x, y, {
+        x: videoButtonX,
+        y: videoButtonY,
+        width: layout.videoButtonWidth,
+        height: layout.videoButtonHeight,
+      });
+    } else {
+      this.videoButton.hovered = false;
+    }
 
     this.storyViewer.updateButtonHover(x, y, layout);
 
@@ -957,7 +1096,7 @@ class LevelSelect extends Screen {
           scrollPercentage * this.achievementsDrawer.maxScroll;
       }
 
-      const closeButtonSize = this.game.getScaledValue(30);
+      const closeButtonSize = this.game.getScaledValue(40);
       const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
       const closeButtonY = this.game.getScaledValue(20);
 
@@ -1021,11 +1160,22 @@ class LevelSelect extends Screen {
   }
 
   onMouseDown(x, y) {
-    if (
-      this.achievementsDrawer.closeButton.hovered &&
-      this.achievementsDrawer.isOpen
-    ) {
-      return false; // Let onClick handle it
+    if (this.achievementsDrawer.isOpen) {
+      const layout = this.layoutCache;
+      const drawerWidth = layout.achievementsDrawerWidth;
+      const progress = this.achievementsDrawer.animationProgress;
+      const drawerX = -drawerWidth + drawerWidth * progress;
+      const closeButtonSize = this.game.getScaledValue(40);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
+      const closeButtonY = this.game.getScaledValue(20);
+
+      const dx = x - closeButtonX;
+      const dy = y - closeButtonY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= closeButtonSize / 2) {
+        return false;
+      }
     }
 
     if (
@@ -1063,7 +1213,6 @@ class LevelSelect extends Screen {
         sock.vx = 0;
         sock.vy = 0;
 
-        // Initialize mouse position to prevent velocity spike
         this.lastMouseX = x;
         this.lastMouseY = y;
         this.mouseVelocityX = 0;
@@ -1100,10 +1249,8 @@ class LevelSelect extends Screen {
       });
 
       if (!snapped) {
-        // FIX: Apply drag momentum instead of random velocity
         const momentumMultiplier = 0.8; // Adjust for feel
 
-        // Clamp velocity to prevent excessive speeds
         const maxVelocity = 20;
         const clampedVx = Math.max(
           -maxVelocity,
@@ -1117,7 +1264,6 @@ class LevelSelect extends Screen {
         sock.vx = clampedVx;
         sock.vy = clampedVy;
 
-        // Add subtle rotation based on velocity
         const velocityMagnitude = Math.sqrt(
           sock.vx * sock.vx + sock.vy * sock.vy
         );
@@ -1133,6 +1279,15 @@ class LevelSelect extends Screen {
   }
 
   handleKeyDown(e) {
+    // If video player is active, close with Escape
+    if (this.videoPlayerActive) {
+      if (e.key === "Escape") {
+        this.closeVideoPlayer();
+        e.preventDefault();
+      }
+      return;
+    }
+
     // If story is showing, let it handle keyboard
     if (this.game.storyManager.showingStory) {
       return; // Story manager will handle its own keys
@@ -1259,22 +1414,25 @@ class LevelSelect extends Screen {
     if (this.game.unlockedLevels[levelIndex]) {
       this.game.audioManager.playSound("button-click", false, 0.5);
 
-      // NEW GAME+: Show difficulty selection if completed
-      if (
-        this.game.completedLevels[levelIndex] &&
-        this.game.highestUnlockedDifficulty > 0
-      ) {
-        this.difficultyModal.open(levelIndex);
-      } else {
-        this.game.startLevel(levelIndex, this.game.selectedDifficulty);
-      }
+      // Always start the level with the currently selected difficulty from dropdown
+      this.game.startLevel(levelIndex, this.game.selectedDifficulty);
     } else {
       // Calculate cost based on current difficulty
-      const levelCost = GameConfig.getLevelCost(levelIndex, this.game.selectedDifficulty);
+      const levelCost = GameConfig.getLevelCost(
+        levelIndex,
+        this.game.selectedDifficulty
+      );
 
       if (this.game.playerPoints >= levelCost) {
         this.game.audioManager.playSound("level-unlock", false, 0.6);
         this.game.playerPoints -= levelCost;
+
+        // Track money spent for Big Spender achievement
+        this.game.totalMoneySpent += levelCost;
+        if (this.game.totalMoneySpent >= 1000) {
+          this.game.unlockAchievement("big_spender");
+        }
+
         this.game.unlockedLevels[levelIndex] = true;
         this.game.saveGameData();
         this.game.startLevel(levelIndex, this.game.selectedDifficulty);
@@ -1361,35 +1519,87 @@ class LevelSelect extends Screen {
   }
 
   onClick(x, y) {
+    // Handle video player modal clicks
+    if (this.videoPlayerActive) {
+      const videoWidth = this.game.getScaledValue(640);
+      const videoHeight = this.game.getScaledValue(360);
+      const videoX = (this.game.getCanvasWidth() - videoWidth) / 2;
+      const videoY = (this.game.getCanvasHeight() - videoHeight) / 2;
+      const clickMargin = this.game.getScaledValue(10);
+
+      const clickedOutside =
+        x < videoX - clickMargin ||
+        x > videoX + videoWidth + clickMargin ||
+        y < videoY - clickMargin ||
+        y > videoY + videoHeight + clickMargin;
+
+      if (clickedOutside) {
+        this.closeVideoPlayer();
+      }
+      return;
+    }
+
     if (this.game.storyManager.showingStory) {
       this.game.storyManager.handleClick(x, y);
       return;
     }
 
-    // Handle story viewer modal clicks
     if (this.storyViewer.handleClick(x, y)) {
       return;
     }
 
-    // Handle achievements drawer clicks FIRST (since it renders on top)
-    // Check close button first and only if drawer is open
+    if (this.achievementsDrawer.isOpen) {
+      const layout = this.layoutCache;
+      const drawerWidth = layout.achievementsDrawerWidth;
+      const progress = this.achievementsDrawer.animationProgress;
+      const drawerX = -drawerWidth + drawerWidth * progress;
+      const closeButtonSize = this.game.getScaledValue(40);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
+      const closeButtonY = this.game.getScaledValue(20);
+
+      const dx = x - closeButtonX;
+      const dy = y - closeButtonY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= closeButtonSize / 2) {
+        this.game.audioManager.playSound("button-click", false, 0.5);
+        this.toggleAchievementsDrawer();
+        return true;
+      }
+
+      // Check if click is anywhere on the drawer to prevent click-through
+      const canvasHeight = this.game.getCanvasHeight();
+      if (
+        x >= drawerX &&
+        x <= drawerX + drawerWidth &&
+        y >= 0 &&
+        y <= canvasHeight
+      ) {
+        // Click is on the drawer - consume the click to prevent click-through
+        return true;
+      }
+    }
+
+    // Check achievements button using direct hit detection
+    const layout = this.layoutCache;
     if (
-      this.achievementsDrawer.closeButton.hovered &&
-      this.achievementsDrawer.isOpen
+      this.isPointInRect(x, y, {
+        x: layout.achievementsButtonX - layout.achievementsButtonWidth / 2,
+        y: layout.achievementsButtonY - layout.achievementsButtonHeight / 2,
+        width: layout.achievementsButtonWidth,
+        height: layout.achievementsButtonHeight,
+      })
     ) {
       this.game.audioManager.playSound("button-click", false, 0.5);
       this.toggleAchievementsDrawer();
       return true;
     }
 
-    if (this.achievementsDrawer.button.hovered) {
-      this.game.audioManager.playSound("button-click", false, 0.5);
-      this.toggleAchievementsDrawer();
-      return true;
-    }
-
     // NEW GAME+: Handle difficulty selector clicks (only if New Game+ unlocked)
-    if (this.game.highestUnlockedDifficulty > 0 && this.difficultySelector.handleClick(x, y)) {
+    if (
+      this.game.highestUnlockedDifficulty > 0 &&
+      this.difficultySelector.handleClick(x, y)
+    ) {
       // Clear cache and recalculate layout after difficulty change to update level display
       this.clearLayoutCache();
       this.calculateLayout();
@@ -1397,27 +1607,68 @@ class LevelSelect extends Screen {
     }
 
     // NEW GAME+: Handle difficulty modal clicks (only if New Game+ unlocked)
-    if (this.game.highestUnlockedDifficulty > 0 && this.difficultyModal.handleClick(x, y)) {
+    if (
+      this.game.highestUnlockedDifficulty > 0 &&
+      this.difficultyModal.handleClick(x, y)
+    ) {
       return;
     }
 
-    // Check if Martha was clicked to cycle quotes
+    // Check if Martha was clicked to cycle quotes and trigger laugh animation
     if (this.isMarthaClicked(x, y)) {
       this.cycleToNextQuote();
-      // Optional: play a sound effect or wiggle Martha
-      this.marthaWiggling = true;
-      this.marthaWiggleTimer = 0;
+
+      // Only start animation if not already playing
+      if (!this.marthaLaughing) {
+        this.marthaLaughing = true;
+        this.marthaLaughFrameIndex = 0;
+        this.marthaLaughAnimationTimer = 0;
+        // Play random goblin sound (8 different sounds)
+        this.game.audioManager.playRandomSound("goblin-sound", 8, false, 0.7);
+      }
+
       return true;
     }
 
-    if (this.storyReplayButton.hovered) {
+    // Check story replay button using direct hit detection
+    if (
+      this.isPointInRect(x, y, {
+        x: layout.storyReplayButtonX - layout.storyReplayButtonWidth / 2,
+        y: layout.storyReplayButtonY - layout.storyReplayButtonHeight / 2,
+        width: layout.storyReplayButtonWidth,
+        height: layout.storyReplayButtonHeight,
+      })
+    ) {
       this.game.audioManager.playSound("button-click", false, 0.5);
       this.game.storyManager.show();
       return true;
     }
 
-    if (this.storyViewer.button.hovered) {
+    // Check story viewer button using direct hit detection
+    if (
+      this.isPointInRect(x, y, {
+        x: layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2,
+        y: layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2,
+        width: layout.storyViewerButtonWidth,
+        height: layout.storyViewerButtonHeight,
+      })
+    ) {
       this.storyViewer.open();
+      return true;
+    }
+
+    // Check video button using direct hit detection (only if all levels completed)
+    if (
+      this.areAllLevelsCompleted() &&
+      this.isPointInRect(x, y, {
+        x: layout.videoButtonX - layout.videoButtonWidth / 2,
+        y: layout.videoButtonY - layout.videoButtonHeight / 2,
+        width: layout.videoButtonWidth,
+        height: layout.videoButtonHeight,
+      })
+    ) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.openVideoPlayer();
       return true;
     }
 
@@ -1427,6 +1678,8 @@ class LevelSelect extends Screen {
     }
 
     if (this.isLogoClicked(x, y)) {
+      this.logoPressed = true;
+      this.logoPressTimer = 0;
       this.activateEasterEgg();
       return true;
     }
@@ -1623,6 +1876,13 @@ class LevelSelect extends Screen {
 
   awardPointsForMatch(sock1, sock2) {
     this.game.playerPoints += 1;
+
+    // Track easter egg sockballs for Sockball Wizard achievement
+    this.game.easterEggSockballsCreated++;
+    if (this.game.easterEggSockballsCreated >= 10) {
+      this.game.unlockAchievement("sockball_wizard");
+    }
+
     this.game.saveGameData();
 
     this.game.audioManager.playSound("points-gained", false, 0.7);
@@ -1651,12 +1911,14 @@ class LevelSelect extends Screen {
       this.achievementsDrawer.isOpen &&
       this.achievementsDrawer.animationProgress > 0.5
     ) {
-      const scrollSpeed = this.game.getScaledValue(30);
+      // Use a small multiplier instead of scaling to make scrolling subtle
+      // deltaY is typically around 100 per wheel tick, so 0.5 gives us ~50px per tick
+      const scrollAmount = deltaY * 0.5;
       this.achievementsDrawer.scrollOffset = Math.max(
         0,
         Math.min(
           this.achievementsDrawer.maxScroll,
-          this.achievementsDrawer.scrollOffset + deltaY * scrollSpeed
+          this.achievementsDrawer.scrollOffset + scrollAmount
         )
       );
       return true;
@@ -1699,9 +1961,20 @@ class LevelSelect extends Screen {
 
   activateEasterEgg() {
     this.logoClickCount++;
+    this.game.logoClickCount++; // Track in game for achievement persistence
+
+    // Achievement: LOGO_CLICKER (click logo 10 times)
+    if (this.game.logoClickCount >= 10) {
+      this.game.unlockAchievement("logo_clicker");
+    }
+
     if (!this.easterEggActive) {
       this.easterEggActive = true;
+
+      // Achievement: EASTER_EGG_HUNTER (unlock the easter egg)
+      this.game.unlockAchievement("easter_egg_hunter");
     }
+
     this.spawnSingleSock();
   }
 
@@ -1774,7 +2047,8 @@ class LevelSelect extends Screen {
   }
 
   calculateYouWinImageSize() {
-    const youWinImage = this.game.images["you-win.png"];
+    const spritesheet = GameConfig.YOU_WIN_SPRITESHEET;
+    const youWinImage = this.game.images[spritesheet.filename];
     if (!youWinImage) {
       return { width: 0, height: 0 };
     }
@@ -1783,7 +2057,7 @@ class LevelSelect extends Screen {
     const maxHeight = this.game.getScaledValue(this.YOU_WIN_CONFIG.maxHeight);
 
     if (this.YOU_WIN_CONFIG.maintainAspectRatio) {
-      const aspectRatio = youWinImage.width / youWinImage.height;
+      const aspectRatio = spritesheet.frameWidth / spritesheet.frameHeight;
 
       if (aspectRatio > maxWidth / maxHeight) {
         return {
@@ -1806,8 +2080,10 @@ class LevelSelect extends Screen {
 
   renderYouWinGraphic(ctx) {
     const layout = this.layoutCache;
+    const spritesheet = GameConfig.YOU_WIN_SPRITESHEET;
+    const youWinImage = this.game.images[spritesheet.filename];
 
-    if (this.game.images["you-win.png"]) {
+    if (youWinImage) {
       ctx.save();
 
       const time = Date.now();
@@ -1823,8 +2099,19 @@ class LevelSelect extends Screen {
       ctx.translate(layout.youWinX, layout.youWinY);
       ctx.scale(scale, scale);
 
+      // Calculate spritesheet frame position
+      const frameIndex = spritesheet.animationFrames[this.youWinFrameIndex];
+      const col = frameIndex % spritesheet.columns;
+      const row = Math.floor(frameIndex / spritesheet.columns);
+      const sx = col * spritesheet.frameWidth;
+      const sy = row * spritesheet.frameHeight;
+
       ctx.drawImage(
-        this.game.images["you-win.png"],
+        youWinImage,
+        sx,
+        sy,
+        spritesheet.frameWidth,
+        spritesheet.frameHeight,
         -layout.youWinWidth / 2,
         -layout.youWinHeight / 2,
         layout.youWinWidth,
@@ -1844,6 +2131,7 @@ class LevelSelect extends Screen {
 
     if (this.areAllLevelsCompleted()) {
       this.renderYouWinGraphic(ctx);
+      this.renderVideoButton(ctx);
     }
 
     this.renderTopBar(ctx);
@@ -1862,6 +2150,7 @@ class LevelSelect extends Screen {
     this.renderAchievementsDrawer(ctx);
 
     if (this.easterEggActive) {
+      this.renderEasterDropZonePairBox(ctx);
       this.renderEasterDropZones(ctx);
     }
 
@@ -1873,17 +2162,20 @@ class LevelSelect extends Screen {
       this.renderMenuSocks(ctx);
     }
 
-    // Render story unlock notification
-    if (this.storyUnlockAnimation.isPlaying) {
-      this.renderStoryUnlockNotification(ctx);
-    }
-
     // Render story viewer modal
     this.storyViewer.renderModal(ctx, this.layoutCache);
+
+    // Render video player modal if active
+    if (this.videoPlayerActive) {
+      this.renderVideoPlayer(ctx);
+    }
 
     if (this.game.storyManager.showingStory) {
       this.game.storyManager.render(ctx);
     }
+
+    // Render feedback manager (achievement/story notifications) on top of everything
+    this.game.feedbackManager.render(ctx);
   }
 
   renderBackground(ctx) {
@@ -1904,8 +2196,16 @@ class LevelSelect extends Screen {
   renderLogo(ctx) {
     const layout = this.layoutCache;
 
+    ctx.save();
+
+    // Apply scale effect for click feedback
+    if (this.logoPressScale !== 1.0) {
+      ctx.translate(layout.logoX, layout.logoY);
+      ctx.scale(this.logoPressScale, this.logoPressScale);
+      ctx.translate(-layout.logoX, -layout.logoY);
+    }
+
     if (this.easterEggActive) {
-      ctx.save();
       const glowIntensity = this.getGlowIntensity(10, 20);
       ctx.shadowColor = "#FFD700";
       ctx.shadowBlur = glowIntensity;
@@ -1919,8 +2219,6 @@ class LevelSelect extends Screen {
           layout.logoHeight
         );
       }
-
-      ctx.restore();
     } else {
       if (this.game.images["logo.png"]) {
         ctx.drawImage(
@@ -1932,39 +2230,19 @@ class LevelSelect extends Screen {
         );
       }
     }
+
+    ctx.restore();
   }
 
   renderInstructions(ctx) {
     const layout = this.layoutCache;
 
-    this.renderText(
-      ctx,
-      "Click sock pile to shoot socks, drag socks to drop zones",
-      layout.centerX,
-      layout.instructionsY,
-      {
-        fontSize: layout.bodyFontSize,
-        color: "rgba(255, 255, 255, 0.9)",
-      }
-    );
-
-    this.renderText(
-      ctx,
-      "Match pairs to create sock balls, then give Martha your rent!",
-      layout.centerX,
-      layout.instructionsY + layout.mediumSpacing,
-      {
-        fontSize: layout.bodyFontSize,
-        color: "rgba(255, 255, 255, 0.9)",
-      }
-    );
-
     if (this.easterEggActive && this.menuSocks.length > 0) {
       this.renderText(
         ctx,
-        "Drag socks to the drop zones next to Martha!",
+        "Drag socks to the drop zones for bonus points!",
         layout.centerX,
-        layout.instructionsY + layout.mediumSpacing * 2,
+        layout.instructionsY + layout.mediumSpacing * 2.5,
         {
           fontSize: layout.smallFontSize,
           color: "rgba(255, 215, 0, 0.8)",
@@ -1976,30 +2254,67 @@ class LevelSelect extends Screen {
   renderMarthaImage(ctx) {
     const layout = this.layoutCache;
 
-    if (this.game.images["martha-demand-level-select.png"]) {
-      ctx.save();
+    ctx.save();
 
-      if (this.marthaWiggling) {
-        const wiggleAmount = Math.sin(this.marthaWiggleTimer * 0.02) * 5;
-        ctx.translate(layout.marthaX + wiggleAmount, layout.marthaY);
-      } else {
-        ctx.translate(layout.marthaX, layout.marthaY);
+    // Apply wiggle if active
+    if (this.marthaWiggling) {
+      const wiggleAmount = Math.sin(this.marthaWiggleTimer * 0.02) * 5;
+      ctx.translate(layout.marthaX + wiggleAmount, layout.marthaY);
+    } else {
+      ctx.translate(layout.marthaX, layout.marthaY);
+    }
+
+    // Render either the spritesheet animation or the static image
+    if (this.marthaLaughing) {
+      // Draw spritesheet animation with correct aspect ratio
+      const spritesheet = GameConfig.MARTHA_LAUGHING_SPRITESHEET;
+      const marthaImage = this.game.images[spritesheet.filename];
+
+      if (marthaImage && marthaImage.complete && marthaImage.naturalWidth > 0) {
+        const frameNumber =
+          spritesheet.animationFrames[this.marthaLaughFrameIndex];
+        const col = frameNumber % spritesheet.columns;
+        const row = Math.floor(frameNumber / spritesheet.columns);
+        const sx = col * spritesheet.frameWidth;
+        const sy = row * spritesheet.frameHeight;
+
+        // Calculate correct dimensions maintaining spritesheet aspect ratio
+        // Match the width to the static image and calculate height proportionally, then scale up by 20%
+        const spritesheetAspectRatio =
+          spritesheet.frameWidth / spritesheet.frameHeight;
+        const drawWidth = layout.marthaWidth * 1.3;
+        const drawHeight = (layout.marthaWidth / spritesheetAspectRatio) * 1.3;
+
+        ctx.drawImage(
+          marthaImage,
+          sx,
+          sy,
+          spritesheet.frameWidth,
+          spritesheet.frameHeight,
+          -drawWidth / 2,
+          -drawHeight / 2,
+          drawWidth,
+          drawHeight
+        );
       }
-
-      ctx.drawImage(
-        this.game.images["martha-demand-level-select.png"],
-        -layout.marthaWidth / 2,
-        -layout.marthaHeight / 2,
-        layout.marthaWidth,
-        layout.marthaHeight
-      );
-
-      ctx.restore();
-
-      // Render quote bubble if showing
-      if (this.showingQuote && this.currentQuote) {
-        this.renderMarthaQuote(ctx, layout);
+    } else {
+      // Draw static image
+      if (this.game.images["martha-demand-level-select.png"]) {
+        ctx.drawImage(
+          this.game.images["martha-demand-level-select.png"],
+          -layout.marthaWidth / 2,
+          -layout.marthaHeight / 2,
+          layout.marthaWidth,
+          layout.marthaHeight
+        );
       }
+    }
+
+    ctx.restore();
+
+    // Render quote bubble if showing
+    if (this.showingQuote && this.currentQuote) {
+      this.renderMarthaQuote(ctx, layout);
     }
   }
 
@@ -2019,7 +2334,7 @@ class LevelSelect extends Screen {
     const maxWidth = this.game.getScaledValue(280);
 
     // Measure text
-    ctx.font = `bold ${fontSize}px Courier New`;
+    ctx.font = `bold ${fontSize}px Arial`;
     const words = this.currentQuote.split(" ");
     const lines = [];
     let currentLine = words[0];
@@ -2129,17 +2444,19 @@ class LevelSelect extends Screen {
     ctx.restore();
 
     // Player stats (left side)
-    this.renderText(
-      ctx,
-      "💰",
-      layout.statsX - this.game.getScaledValue(50),
-      layout.statsY,
-      {
-        fontSize: layout.headerFontSize,
-        align: "center",
-        baseline: "middle",
-      }
-    );
+    // Draw money icon
+    if (this.game.images["icon-money.png"]) {
+      const moneyIcon = this.game.images["icon-money.png"];
+      const iconHeight = this.game.getScaledValue(40);
+      const iconWidth = iconHeight * (moneyIcon.width / moneyIcon.height);
+      ctx.drawImage(
+        moneyIcon,
+        layout.statsX - this.game.getScaledValue(50) - iconWidth / 2,
+        layout.statsY - iconHeight / 2,
+        iconWidth,
+        iconHeight
+      );
+    }
 
     this.renderText(
       ctx,
@@ -2155,17 +2472,19 @@ class LevelSelect extends Screen {
       }
     );
 
-    this.renderText(
-      ctx,
-      "🧦",
-      layout.statsX + this.game.getScaledValue(120),
-      layout.statsY,
-      {
-        fontSize: layout.headerFontSize,
-        align: "center",
-        baseline: "middle",
-      }
-    );
+    // Draw sock icon
+    if (this.game.images["icon-sock.png"]) {
+      const sockIcon = this.game.images["icon-sock.png"];
+      const sockIconHeight = this.game.getScaledValue(40);
+      const sockIconWidth = sockIconHeight * (sockIcon.width / sockIcon.height);
+      ctx.drawImage(
+        sockIcon,
+        layout.statsX + this.game.getScaledValue(120) - sockIconWidth / 2,
+        layout.statsY - sockIconHeight / 2,
+        sockIconWidth,
+        sockIconHeight
+      );
+    }
 
     this.renderText(
       ctx,
@@ -2190,7 +2509,10 @@ class LevelSelect extends Screen {
       layout.achievementsButtonHeight,
       "Trophies",
       this.achievementsDrawer.button.hovered,
-      "rgba(218, 165, 32, 0.8)"
+      "rgba(218, 165, 32, 0.8)",
+      null,
+      false,
+      "btn-trophies.png"
     );
 
     this.renderTopBarButton(
@@ -2201,13 +2523,19 @@ class LevelSelect extends Screen {
       layout.storyReplayButtonHeight,
       "How to Play",
       this.storyReplayButton.hovered,
-      "rgba(70, 130, 180, 0.8)"
+      "rgba(70, 130, 180, 0.8)",
+      null,
+      false,
+      "btn-htp.png"
     );
 
     // Calculate unlocked lore count
     const unlockedLoreCount = this.game.unlockedStoryPanels.filter(
       (u) => u
     ).length;
+
+    // Check if there are unviewed panels to enable pulse
+    const hasUnviewedPanels = this.storyViewer.hasUnviewedPanels();
 
     this.renderTopBarButton(
       ctx,
@@ -2218,8 +2546,10 @@ class LevelSelect extends Screen {
       "Story",
       this.storyViewer.button.hovered,
       "rgba(138, 43, 226, 0.8)",
-      `${unlockedLoreCount}/9`,
-      unlockedLoreCount === 0 // isDisabled when no panels unlocked
+      null, // Remove x/9 display
+      unlockedLoreCount === 0, // isDisabled when no panels unlocked
+      "btn-story.png",
+      hasUnviewedPanels // Pulse when there are unviewed panels
     );
 
     this.renderTopBarButton(
@@ -2230,7 +2560,10 @@ class LevelSelect extends Screen {
       layout.creditsButtonHeight,
       "Credits",
       this.creditsButton.hovered,
-      "rgba(100, 100, 100, 0.8)"
+      "rgba(100, 100, 100, 0.8)",
+      null,
+      false,
+      "btn-credits.png"
     );
   }
 
@@ -2244,85 +2577,157 @@ class LevelSelect extends Screen {
     isHovered,
     baseColor,
     countBadge = null,
-    isDisabled = false
+    isDisabled = false,
+    imageKey = null,
+    shouldPulse = false
   ) {
     ctx.save();
 
     const buttonLeft = x - width / 2;
     const buttonTop = y - height / 2;
-    const radius = this.game.getScaledValue(6);
 
-    // Button background
-    if (isDisabled) {
-      ctx.fillStyle = "rgba(80, 80, 80, 0.5)";
-    } else {
-      ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
-    }
+    // If an image is provided, render it instead of the old button style
+    if (imageKey && this.game.images[imageKey]) {
+      const buttonImage = this.game.images[imageKey];
 
-    ctx.strokeStyle = isDisabled
-      ? "rgba(100, 100, 100, 0.3)"
-      : isHovered
-      ? "rgba(255, 255, 255, 0.8)"
-      : "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 2;
+      // Always fit to height to ensure consistent button heights
+      // Calculate width based on image aspect ratio
+      const imageAspectRatio = buttonImage.width / buttonImage.height;
 
-    // Rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(buttonLeft + radius, buttonTop);
-    ctx.lineTo(buttonLeft + width - radius, buttonTop);
-    ctx.arcTo(
-      buttonLeft + width,
-      buttonTop,
-      buttonLeft + width,
-      buttonTop + radius,
-      radius
-    );
-    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
-    ctx.arcTo(
-      buttonLeft + width,
-      buttonTop + height,
-      buttonLeft + width - radius,
-      buttonTop + height,
-      radius
-    );
-    ctx.lineTo(buttonLeft + radius, buttonTop + height);
-    ctx.arcTo(
-      buttonLeft,
-      buttonTop + height,
-      buttonLeft,
-      buttonTop + height - radius,
-      radius
-    );
-    ctx.lineTo(buttonLeft, buttonTop + radius);
-    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+      let drawWidth, drawHeight, drawX, drawY;
 
-    // Button text
-    this.renderText(
-      ctx,
-      text,
-      x,
-      y - (countBadge ? this.game.getScaledValue(6) : 0),
-      {
-        fontSize: this.layoutCache.smallFontSize,
-        align: "center",
-        baseline: "middle",
-        color: isDisabled ? "rgba(150, 150, 150, 0.6)" : "rgba(255, 255, 255, 0.9)",
-        weight: "bold",
+      drawHeight = height;
+      drawWidth = height * imageAspectRatio;
+      drawX = buttonLeft + (width - drawWidth) / 2;
+      drawY = buttonTop;
+
+      // Apply hover and disabled effects
+      if (isDisabled) {
+        ctx.globalAlpha = 0.5;
+      } else if (isHovered) {
+        ctx.globalAlpha = 1.0;
+        // Optional: Add a subtle glow or highlight
+        ctx.shadowColor = "rgba(255, 255, 255, 0.5)";
+        ctx.shadowBlur = 10;
+      } else {
+        ctx.globalAlpha = 0.9;
       }
-    );
 
-    // Count badge below text
-    if (countBadge) {
-      this.renderText(ctx, countBadge, x, y + this.game.getScaledValue(12), {
-        fontSize: this.game.getScaledValue(12),
-        align: "center",
-        baseline: "middle",
-        color: isDisabled ? "rgba(150, 150, 150, 0.6)" : "rgba(255, 215, 0, 0.9)",
-        weight: "bold",
-      });
+      // Add pulse effect if requested
+      if (shouldPulse && !isDisabled) {
+        const pulseFrequency = 0.002; // Slower pulse
+        const pulseAmount =
+          Math.sin(this.storyViewer.pulseTimer * pulseFrequency) * 0.5 + 0.5;
+        const glowIntensity = 0.3 + pulseAmount * 0.7;
+
+        ctx.shadowColor = `rgba(255, 100, 255, ${glowIntensity})`;
+        ctx.shadowBlur = this.game.getScaledValue(15 + pulseAmount * 10);
+      }
+
+      ctx.drawImage(buttonImage, drawX, drawY, drawWidth, drawHeight);
+
+      // Reset effects
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1.0;
+
+      // Count badge below image
+      if (countBadge) {
+        this.renderText(
+          ctx,
+          countBadge,
+          x,
+          y + height / 2 + this.game.getScaledValue(10),
+          {
+            fontSize: this.game.getScaledValue(12),
+            align: "center",
+            baseline: "middle",
+            color: isDisabled
+              ? "rgba(150, 150, 150, 0.6)"
+              : "rgba(255, 215, 0, 0.9)",
+            weight: "bold",
+          }
+        );
+      }
+    } else {
+      // Original rendering code (fallback if no image provided)
+      const radius = this.game.getScaledValue(6);
+
+      // Button background
+      if (isDisabled) {
+        ctx.fillStyle = "rgba(80, 80, 80, 0.5)";
+      } else {
+        ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+      }
+
+      ctx.strokeStyle = isDisabled
+        ? "rgba(100, 100, 100, 0.3)"
+        : isHovered
+        ? "rgba(255, 255, 255, 0.8)"
+        : "rgba(255, 255, 255, 0.4)";
+      ctx.lineWidth = 2;
+
+      // Rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(buttonLeft + radius, buttonTop);
+      ctx.lineTo(buttonLeft + width - radius, buttonTop);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop,
+        buttonLeft + width,
+        buttonTop + radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop + height,
+        buttonLeft + width - radius,
+        buttonTop + height,
+        radius
+      );
+      ctx.lineTo(buttonLeft + radius, buttonTop + height);
+      ctx.arcTo(
+        buttonLeft,
+        buttonTop + height,
+        buttonLeft,
+        buttonTop + height - radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft, buttonTop + radius);
+      ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Button text
+      this.renderText(
+        ctx,
+        text,
+        x,
+        y - (countBadge ? this.game.getScaledValue(6) : 0),
+        {
+          fontSize: this.layoutCache.smallFontSize,
+          align: "center",
+          baseline: "middle",
+          color: isDisabled
+            ? "rgba(150, 150, 150, 0.6)"
+            : "rgba(255, 255, 255, 0.9)",
+          weight: "bold",
+        }
+      );
+
+      // Count badge below text
+      if (countBadge) {
+        this.renderText(ctx, countBadge, x, y + this.game.getScaledValue(12), {
+          fontSize: this.game.getScaledValue(12),
+          align: "center",
+          baseline: "middle",
+          color: isDisabled
+            ? "rgba(150, 150, 150, 0.6)"
+            : "rgba(255, 215, 0, 0.9)",
+          weight: "bold",
+        });
+      }
     }
 
     ctx.restore();
@@ -2654,7 +3059,7 @@ class LevelSelect extends Screen {
       ctx.shadowBlur = this.game.getScaledValue(20);
       this.renderText(
         ctx,
-        "🏆 Achievements",
+        "TROPHIES",
         drawerX + drawerWidth / 2,
         this.game.getScaledValue(35),
         {
@@ -2679,60 +3084,46 @@ class LevelSelect extends Screen {
       );
       ctx.stroke();
 
-      // Render close button
-      const closeButtonSize = this.game.getScaledValue(30);
+      // Render close button (styled to match credits popup)
+      const closeButtonSize = this.game.getScaledValue(40);
       const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
       const closeButtonY = this.game.getScaledValue(20);
 
       ctx.save();
 
-      // Close button background
-      const closeGradient = ctx.createRadialGradient(
-        closeButtonX,
-        closeButtonY,
-        0,
-        closeButtonX,
-        closeButtonY,
-        closeButtonSize / 2
-      );
+      // Close button background - matching credits style
       if (this.achievementsDrawer.closeButton.hovered) {
-        closeGradient.addColorStop(0, "rgba(255, 100, 100, 0.8)");
-        closeGradient.addColorStop(1, "rgba(200, 50, 50, 0.8)");
-        ctx.shadowColor = "rgba(255, 100, 100, 0.6)";
+        ctx.fillStyle = "rgba(212, 175, 55, 0.2)";
+        ctx.shadowColor = "rgba(212, 175, 55, 0.4)";
         ctx.shadowBlur = this.game.getScaledValue(10);
       } else {
-        closeGradient.addColorStop(0, "rgba(180, 180, 180, 0.6)");
-        closeGradient.addColorStop(1, "rgba(120, 120, 120, 0.6)");
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
       }
-      ctx.fillStyle = closeGradient;
 
       ctx.beginPath();
       ctx.arc(closeButtonX, closeButtonY, closeButtonSize / 2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Close button border
-      ctx.strokeStyle = this.achievementsDrawer.closeButton.hovered
-        ? "rgba(255, 150, 150, 0.9)"
-        : "rgba(200, 200, 200, 0.5)";
+      // Close button border - matching credits gold theme
+      if (this.achievementsDrawer.closeButton.hovered) {
+        ctx.strokeStyle = "rgba(212, 175, 55, 0.5)";
+      } else {
+        ctx.strokeStyle = "rgba(212, 175, 55, 0.3)";
+      }
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(closeButtonX, closeButtonY, closeButtonSize / 2, 0, Math.PI * 2);
       ctx.stroke();
 
-      // X symbol
-      ctx.strokeStyle = this.achievementsDrawer.closeButton.hovered
-        ? "#FFFFFF"
-        : "rgba(255, 255, 255, 0.8)";
-      ctx.lineWidth = this.game.getScaledValue(3);
-      ctx.lineCap = "round";
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
 
-      const xSize = closeButtonSize * 0.35;
-      ctx.beginPath();
-      ctx.moveTo(closeButtonX - xSize, closeButtonY - xSize);
-      ctx.lineTo(closeButtonX + xSize, closeButtonY + xSize);
-      ctx.moveTo(closeButtonX + xSize, closeButtonY - xSize);
-      ctx.lineTo(closeButtonX - xSize, closeButtonY + xSize);
-      ctx.stroke();
+      // X symbol - using × character like credits
+      ctx.fillStyle = "#e0e0e0";
+      ctx.font = `bold ${this.game.getScaledValue(28)}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("×", closeButtonX, closeButtonY);
 
       ctx.restore();
 
@@ -2849,17 +3240,49 @@ class LevelSelect extends Screen {
         const iconY = cardY + cardHeight / 2;
 
         ctx.globalAlpha = unlocked ? 1 : 0.4;
-        this.renderText(ctx, achievement.icon, iconX, iconY, {
-          fontSize: this.game.getScaledValue(32),
-          align: "center",
-          baseline: "middle",
-        });
+
+        // Check if icon is an image path or emoji
+        if (achievement.icon.endsWith('.png')) {
+          // Render as image with aspect ratio maintained
+          const maxIconSize = this.game.getScaledValue(32);
+          const iconImage = this.game.images[achievement.icon];
+          if (iconImage) {
+            const aspectRatio = iconImage.width / iconImage.height;
+            let iconWidth, iconHeight;
+
+            if (aspectRatio > 1) {
+              // Wider than tall
+              iconWidth = maxIconSize;
+              iconHeight = maxIconSize / aspectRatio;
+            } else {
+              // Taller than wide or square
+              iconHeight = maxIconSize;
+              iconWidth = maxIconSize * aspectRatio;
+            }
+
+            ctx.drawImage(
+              iconImage,
+              iconX - iconWidth / 2,
+              iconY - iconHeight / 2,
+              iconWidth,
+              iconHeight
+            );
+          }
+        } else {
+          // Render as emoji text
+          this.renderText(ctx, achievement.icon, iconX, iconY, {
+            fontSize: this.game.getScaledValue(32),
+            align: "center",
+            baseline: "middle",
+          });
+        }
+
         ctx.globalAlpha = 1;
 
         const textX = cardX + this.game.getScaledValue(60);
         const nameY = cardY + this.game.getScaledValue(20);
 
-        ctx.font = `bold ${layout.smallFontSize}px "Courier New", monospace`;
+        ctx.font = `bold ${layout.smallFontSize}px "Arial", monospace`;
         ctx.fillStyle = unlocked ? "#FFD700" : "rgba(255, 255, 255, 0.5)";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
@@ -2880,7 +3303,7 @@ class LevelSelect extends Screen {
 
         const descY = cardY + this.game.getScaledValue(40);
 
-        ctx.font = `${layout.smallFontSize - 2}px "Courier New", monospace`;
+        ctx.font = `${layout.smallFontSize - 2}px "Arial", monospace`;
         ctx.fillStyle = unlocked
           ? "rgba(255, 255, 255, 0.8)"
           : "rgba(255, 255, 255, 0.4)";
@@ -2901,12 +3324,29 @@ class LevelSelect extends Screen {
         const statusX = cardX + cardWidth - this.game.getScaledValue(15);
         const statusY = cardY + cardHeight - this.game.getScaledValue(15);
 
-        this.renderText(ctx, unlocked ? "✓" : "🔒", statusX, statusY, {
-          fontSize: this.game.getScaledValue(16),
-          align: "right",
-          baseline: "bottom",
-          color: unlocked ? "#90EE90" : "#888888",
-        });
+        if (unlocked) {
+          this.renderText(ctx, "✓", statusX, statusY, {
+            fontSize: this.game.getScaledValue(16),
+            align: "right",
+            baseline: "bottom",
+            color: "#90EE90",
+          });
+        } else {
+          // Draw lock icon
+          if (this.game.images["icon-lock.png"]) {
+            const lockIcon = this.game.images["icon-lock.png"];
+            const lockIconHeight = this.game.getScaledValue(28);
+            const lockIconWidth =
+              lockIconHeight * (lockIcon.width / lockIcon.height);
+            ctx.drawImage(
+              lockIcon,
+              statusX - lockIconWidth,
+              statusY - lockIconHeight,
+              lockIconWidth,
+              lockIconHeight
+            );
+          }
+        }
 
         ctx.restore();
       });
@@ -2954,77 +3394,6 @@ class LevelSelect extends Screen {
 
       ctx.restore();
     }
-  }
-
-  renderStoryUnlockNotification(ctx) {
-    const panelIndex = this.storyUnlockAnimation.panelIndex;
-    const progress = this.storyUnlockAnimation.animationProgress;
-    const panel = GameConfig.STORY_PANELS[panelIndex];
-
-    if (!panel) return;
-
-    const canvasWidth = this.game.getCanvasWidth();
-    const canvasHeight = this.game.getCanvasHeight();
-
-    // Animation phases
-    const fadeInDuration = 0.15;
-    const stayDuration = 0.7;
-    const fadeOutDuration = 0.15;
-
-    let alpha = 1;
-    if (progress < fadeInDuration) {
-      alpha = progress / fadeInDuration;
-    } else if (progress > stayDuration) {
-      alpha = 1 - (progress - stayDuration) / fadeOutDuration;
-    }
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    // Toast notification at top center
-    const boxWidth = this.game.getScaledValue(400);
-    const boxHeight = this.game.getScaledValue(60);
-    const x = canvasWidth / 2 - boxWidth / 2;
-    const slideOffset =
-      (1 - Math.min(progress / fadeInDuration, 1)) * -boxHeight;
-    const y = this.game.getScaledValue(70) + slideOffset;
-    const radius = this.game.getScaledValue(8);
-
-    // Dark background with purple accent
-    ctx.fillStyle = "rgba(40, 40, 40, 0.95)";
-    this.drawRoundedRect(ctx, x, y, boxWidth, boxHeight, radius);
-    ctx.fill();
-
-    // Purple border for story content
-    ctx.strokeStyle = "rgba(138, 43, 226, 0.8)";
-    ctx.lineWidth = this.game.getScaledValue(2);
-    this.drawRoundedRect(ctx, x, y, boxWidth, boxHeight, radius);
-    ctx.stroke();
-
-    // Book icon
-    const iconX = x + this.game.getScaledValue(25);
-    const iconY = y + boxHeight / 2;
-    ctx.font = `${this.game.getScaledValue(28)}px Arial`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#BA55D3";
-    ctx.fillText("📖", iconX, iconY);
-
-    // Text
-    const textX = iconX + this.game.getScaledValue(45);
-    ctx.font = `bold ${this.game.getScaledValue(14)}px Courier New`;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-    ctx.fillText(
-      "Story Panel Unlocked:",
-      textX,
-      iconY - this.game.getScaledValue(10)
-    );
-
-    ctx.font = `bold ${this.game.getScaledValue(16)}px Courier New`;
-    ctx.fillStyle = "#BA55D3";
-    ctx.fillText(panel.title, textX, iconY + this.game.getScaledValue(12));
-
-    ctx.restore();
   }
 
   renderStoryViewerModal(ctx) {
@@ -3118,11 +3487,67 @@ class LevelSelect extends Screen {
     const panel = GameConfig.STORY_PANELS[panelIndex];
 
     // Panel image (if available) - smaller and at top
-    const imageSize = this.game.getScaledValue(120);
-    const imageX = canvasWidth / 2 - imageSize / 2;
+    // Panel 3 gets a larger size due to its wide aspect ratio
+    const maxImageSize = this.game.getScaledValue(panelIndex === 2 ? 240 : 180);
     const imageY = modalY + this.game.getScaledValue(80);
+    let actualImageHeight = maxImageSize; // Track actual rendered height
 
-    if (panel.image && this.game.images[panel.image]) {
+    // Check if this panel uses a spritesheet
+    if (panel.spritesheet) {
+      const spritesheetConfig = GameConfig[panel.spritesheet];
+      const spritesheetImage = this.game.images[spritesheetConfig.filename];
+
+      if (spritesheetImage && spritesheetConfig) {
+        // Calculate aspect ratio from frame dimensions
+        const aspectRatio =
+          spritesheetConfig.frameWidth / spritesheetConfig.frameHeight;
+        let imageWidth, imageHeight;
+
+        if (aspectRatio > 1) {
+          // Landscape - constrain width
+          imageWidth = maxImageSize;
+          imageHeight = maxImageSize / aspectRatio;
+        } else {
+          // Portrait or square - constrain height
+          imageHeight = maxImageSize;
+          imageWidth = maxImageSize * aspectRatio;
+        }
+
+        actualImageHeight = imageHeight; // Store actual height
+        const imageX = canvasWidth / 2 - imageWidth / 2;
+
+        // Get current frame from animation sequence
+        const frameIndex =
+          spritesheetConfig.animationFrames[this.storyViewer.currentFrame];
+        const frameX =
+          (frameIndex % spritesheetConfig.columns) *
+          spritesheetConfig.frameWidth;
+        const frameY =
+          Math.floor(frameIndex / spritesheetConfig.columns) *
+          spritesheetConfig.frameHeight;
+
+        ctx.save();
+        ctx.shadowColor = "rgba(180, 100, 255, 0.3)";
+        ctx.shadowBlur = this.game.getScaledValue(10);
+
+        // Draw the current frame from the spritesheet
+        ctx.drawImage(
+          spritesheetImage,
+          frameX,
+          frameY,
+          spritesheetConfig.frameWidth,
+          spritesheetConfig.frameHeight,
+          imageX,
+          imageY,
+          imageWidth,
+          imageHeight
+        );
+        ctx.restore();
+      }
+    } else if (panel.image && this.game.images[panel.image]) {
+      // Static image fallback
+      const imageX = canvasWidth / 2 - maxImageSize / 2;
+
       ctx.save();
       ctx.shadowColor = "rgba(180, 100, 255, 0.3)";
       ctx.shadowBlur = this.game.getScaledValue(10);
@@ -3130,14 +3555,14 @@ class LevelSelect extends Screen {
         this.game.images[panel.image],
         imageX,
         imageY,
-        imageSize,
-        imageSize
+        maxImageSize,
+        maxImageSize
       );
       ctx.restore();
     }
 
     // Panel title - positioned below image
-    const titleY = imageY + imageSize + this.game.getScaledValue(20);
+    const titleY = imageY + actualImageHeight + this.game.getScaledValue(20);
     this.renderText(ctx, panel.title, canvasWidth / 2, titleY, {
       fontSize: this.game.getScaledValue(20),
       color: "#FFD700",
@@ -3150,7 +3575,7 @@ class LevelSelect extends Screen {
     const textMaxWidth = modalWidth - this.game.getScaledValue(100);
     const lineHeight = this.game.getScaledValue(20);
 
-    ctx.font = `${layout.bodyFontSize}px Courier New`;
+    ctx.font = `${layout.bodyFontSize}px Arial`;
     ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -3254,43 +3679,119 @@ class LevelSelect extends Screen {
 
     ctx.save();
 
-    const gradient = ctx.createLinearGradient(
-      buttonX,
-      buttonY,
-      buttonX,
-      buttonY + height
-    );
-    if (isClose) {
-      gradient.addColorStop(0, "rgba(200, 50, 50, 0.8)");
-      gradient.addColorStop(1, "rgba(150, 30, 30, 0.8)");
-    } else {
-      gradient.addColorStop(0, "rgba(100, 150, 255, 0.8)");
-      gradient.addColorStop(1, "rgba(65, 105, 225, 0.8)");
-    }
-    ctx.fillStyle = gradient;
-    this.drawRoundedRect(ctx, buttonX, buttonY, width, height, radius);
-    ctx.fill();
+    // Determine which button image to use based on text content
+    let buttonImage = null;
+    const isPrevious = text.includes("Prev") || text.includes("←");
+    const isNext = text.includes("Next") || text.includes("→");
 
-    ctx.strokeStyle = isClose
-      ? "rgba(255, 100, 100, 0.6)"
-      : "rgba(150, 200, 255, 0.6)";
-    ctx.lineWidth = this.game.getScaledValue(2);
-    this.drawRoundedRect(ctx, buttonX, buttonY, width, height, radius);
-    ctx.stroke();
+    if (isClose) {
+      buttonImage = this.game.images["btn-exit.png"];
+    } else if (isPrevious) {
+      buttonImage = this.game.images["btn-back.png"];
+    } else if (isNext) {
+      buttonImage = this.game.images["btn-next.png"];
+    }
+
+    // Check if mouse is hovering (we need to track hover state for these buttons)
+    const isHovered = this.isPointInRect(
+      this.lastMouseX || 0,
+      this.lastMouseY || 0,
+      {
+        x: buttonX,
+        y: buttonY,
+        width: width,
+        height: height,
+      }
+    );
+
+    // If we have a button image, use it
+    if (buttonImage) {
+      // Calculate dimensions to fit the button while maintaining aspect ratio
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = width;
+      let imgHeight = imgWidth / aspectRatio;
+
+      // If height is too large, scale by height instead
+      if (imgHeight > height) {
+        imgHeight = height;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = buttonX + (width - imgWidth) / 2;
+      const imgY = buttonY + (height - imgHeight) / 2;
+
+      // Apply hover effect - scale and add glow
+      if (isHovered) {
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = buttonX + (width - scaledWidth) / 2;
+        const scaledY = buttonY + (height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    }
 
     ctx.restore();
+  }
 
-    this.renderText(ctx, text, x, y, {
-      fontSize: this.game.getScaledValue(14),
-      color: "white",
-      weight: "bold",
+  renderEasterDropZonePairBox(ctx) {
+    if (this.easterDropZones.length < 2) return;
+
+    const layout = this.layoutCache;
+    const lineWidth = this.game.getScaledValue(3);
+    const margin = this.game.getScaledValue(30);
+    const cornerRadius = this.game.getScaledValue(10);
+
+    // Calculate bounding box around both drop zones
+    const minX = Math.min(this.easterDropZones[0].x, this.easterDropZones[1].x) - margin;
+    const maxX = Math.max(this.easterDropZones[0].x, this.easterDropZones[1].x) + margin;
+    const minY = Math.min(this.easterDropZones[0].y, this.easterDropZones[1].y) - margin;
+    const maxY = Math.max(this.easterDropZones[0].y, this.easterDropZones[1].y) + margin;
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const centerX = (minX + maxX) / 2;
+
+    ctx.save();
+
+    // Draw rounded rectangle background with subtle gradient
+    const gradient = ctx.createLinearGradient(minX, minY, minX, maxY);
+    gradient.addColorStop(0, "rgba(255, 215, 0, 0.1)");
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0.05)");
+
+    ctx.fillStyle = gradient;
+    this.roundRect(ctx, minX, minY, width, height, cornerRadius);
+    ctx.fill();
+
+    // Draw solid border
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.5)";
+    ctx.lineWidth = lineWidth;
+    this.roundRect(ctx, minX, minY, width, height, cornerRadius);
+    ctx.stroke();
+
+    // Draw "Drop Here" text above the box
+    const textY = minY - this.game.getScaledValue(15);
+    this.renderText(ctx, "Drop Here", centerX, textY, {
+      fontSize: layout.bodyFontSize,
+      color: "rgba(255, 215, 0, 0.9)",
       align: "center",
-      baseline: "middle",
+      baseline: "bottom",
+      weight: "bold",
     });
+
+    ctx.restore();
   }
 
   renderEasterDropZones(ctx) {
     const layout = this.layoutCache;
+    const cornerRadius = this.game.getScaledValue(10); // Match match-screen corner radius
 
     this.easterDropZones.forEach((zone) => {
       ctx.save();
@@ -3307,58 +3808,53 @@ class LevelSelect extends Screen {
         glowIntensity = Math.max(glowIntensity, 0.8);
       }
 
-      let borderColor = "rgba(200, 200, 200, 0.5)";
-      let backgroundColor = "rgba(255, 255, 255, 0.1)";
-      let shadowColor = "rgba(255, 255, 255, 0.2)";
-      let shadowBlur = this.game.getScaledValue(5);
+      let borderColor = "white";
+      let backgroundColor = "transparent";
+      let shadowColor = "rgba(100, 255, 100, 0.5)";
+      let shadowBlur = this.game.getScaledValue(15);
 
       if (isOccupied) {
-        borderColor = "rgba(46, 204, 113, 0.8)";
-        backgroundColor = "rgba(46, 204, 113, 0.3)";
-        shadowColor = "rgba(46, 204, 113, 0.5)";
-        shadowBlur = this.game.getScaledValue(10);
+        borderColor = "rgba(100, 255, 100, 0.8)";
       } else if (isHovered) {
-        borderColor = "#2ecc71";
-        backgroundColor = "rgba(46, 204, 113, 0.25)";
-        shadowColor = "rgba(46, 204, 113, 0.6)";
-        shadowBlur = this.game.getScaledValue(15);
+        borderColor = "white";
+        backgroundColor = "rgba(255, 255, 255, 0.1)";
       }
 
+      // Apply glow effect
       if (glowIntensity > 0) {
         ctx.shadowColor = shadowColor;
-        ctx.shadowBlur = shadowBlur * (1 + glowIntensity);
+        ctx.shadowBlur = shadowBlur * glowIntensity;
       }
 
-      ctx.fillStyle = backgroundColor;
-      ctx.fillRect(
-        zone.x - zone.width / 2,
-        zone.y - zone.height / 2,
-        zone.width,
-        zone.height
-      );
+      // Draw rounded rectangle for drop zone (matching match screen style)
+      const lineWidth = isHovered ? this.game.getScaledValue(3) : this.game.getScaledValue(2);
 
-      ctx.setLineDash([5, 5]);
       ctx.strokeStyle = borderColor;
-      ctx.lineWidth = this.game.getScaledValue(isHovered ? 3 : 2);
-      ctx.strokeRect(
+      ctx.lineWidth = lineWidth;
+
+      // Draw rounded rectangle stroke
+      this.roundRect(
+        ctx,
         zone.x - zone.width / 2,
         zone.y - zone.height / 2,
         zone.width,
-        zone.height
+        zone.height,
+        cornerRadius
       );
+      ctx.stroke();
 
-      ctx.setLineDash([]);
-
-      if (!isOccupied && !isHovered) {
-        const pulseIntensity = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(200, 200, 200, ${pulseIntensity * 0.6})`;
-        ctx.lineWidth = this.game.getScaledValue(1);
-        ctx.strokeRect(
+      // Fill if hovered
+      if (isHovered && backgroundColor !== "transparent") {
+        ctx.fillStyle = backgroundColor;
+        this.roundRect(
+          ctx,
           zone.x - zone.width / 2,
           zone.y - zone.height / 2,
           zone.width,
-          zone.height
+          zone.height,
+          cornerRadius
         );
+        ctx.fill();
       }
 
       ctx.restore();
@@ -3421,6 +3917,21 @@ class LevelSelect extends Screen {
     return 1 - Math.pow(1 - t, 3);
   }
 
+  // Helper method to draw rounded rectangles (matching match-screen.js)
+  roundRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+  }
+
   renderLevelButtons(ctx) {
     const layout = this.layoutCache;
 
@@ -3428,7 +3939,7 @@ class LevelSelect extends Screen {
       ctx,
       "Select Level",
       layout.centerX,
-      layout.levelGridStartY - this.game.getScaledValue(120),
+      layout.levelGridStartY - this.game.getScaledValue(100),
       {
         fontSize: layout.titleFontSize,
         weight: "bold",
@@ -3470,7 +3981,10 @@ class LevelSelect extends Screen {
     const isUnlocked = this.game.unlockedLevels[levelIndex];
     const isCompleted = this.game.completedLevels[levelIndex];
     const isHovered = this.hoveredLevel === levelIndex;
-    const levelCost = GameConfig.getLevelCost(levelIndex, this.game.selectedDifficulty);
+    const levelCost = GameConfig.getLevelCost(
+      levelIndex,
+      this.game.selectedDifficulty
+    );
     const isAffordable = this.game.playerPoints >= levelCost;
 
     const hoverProgress = this.levelHoverAnimations[levelIndex] || 0;
@@ -3514,19 +4028,7 @@ class LevelSelect extends Screen {
     ctx.fill();
 
     if (isUnlocked) {
-      ctx.strokeStyle = isCompleted
-        ? "rgba(255, 215, 0, 0.6)"
-        : "rgba(100, 150, 255, 0.6)";
-      ctx.lineWidth = this.game.getScaledValue(3);
-
-      if (hoverProgress > 0) {
-        ctx.shadowColor = isCompleted ? "#FFD700" : "#6496FF";
-        ctx.shadowBlur = this.game.getScaledValue(15) * hoverProgress;
-      }
-
-      ctx.beginPath();
-      ctx.arc(x, y, bgRadius, 0, Math.PI * 2);
-      ctx.stroke();
+      // Circle removed - no outline for unlocked/completed levels
     } else if (isAffordable) {
       const affordablePulse = Math.sin(pulseTimer * 2) * 0.3 + 0.7;
       ctx.strokeStyle = `rgba(255, 215, 0, ${affordablePulse})`;
@@ -3553,17 +4055,26 @@ class LevelSelect extends Screen {
       ctx.shadowOffsetY = this.game.getScaledValue(3);
 
       if (isCompleted) {
+        // Subtle pulse animation for completed levels with offset based on level index
+        const offset = levelIndex * 0.7; // Offset each level's animation
+        const pulse = Math.sin(pulseTimer * 0.5 + offset) * 0.02 + 1; // 2% size variation
+        const float =
+          Math.sin(pulseTimer * 0.7 + offset) * this.game.getScaledValue(1.5); // Slight vertical float
+
         if (sockImage) {
           if (colorFilter) {
             ctx.filter = colorFilter;
           }
 
+          const pulsedSize = buttonSize * pulse;
+          const sizeDiff = (pulsedSize - buttonSize) / 2;
+
           ctx.drawImage(
             sockImage,
-            x - halfSize,
-            y - halfSize,
-            buttonSize,
-            buttonSize
+            x - halfSize - sizeDiff,
+            y - halfSize - sizeDiff + float,
+            pulsedSize,
+            pulsedSize
           );
         }
       } else {
@@ -3597,7 +4108,7 @@ class LevelSelect extends Screen {
         const starSize = this.game.getScaledValue(45);
         const starRotation = Math.sin(this.animationFrame * 0.002) * 0.1;
 
-        ctx.translate(x, y - this.game.getScaledValue(55));
+        ctx.translate(x, y);
         ctx.rotate(starRotation);
         ctx.drawImage(
           this.game.images["star.png"],
@@ -3607,19 +4118,6 @@ class LevelSelect extends Screen {
           starSize
         );
         ctx.restore();
-
-        // NEW GAME+: Show difficulty indicator if unlocked
-        if (this.game.highestUnlockedDifficulty > 0) {
-          ctx.save();
-          ctx.fillStyle = "rgba(100, 150, 255, 0.9)";
-          ctx.font = `bold ${this.game.getScaledValue(12)}px Courier New`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-          ctx.shadowBlur = this.game.getScaledValue(2);
-          ctx.fillText("NEW GAME+", x, y + this.game.getScaledValue(45));
-          ctx.restore();
-        }
       }
 
       ctx.save();
@@ -3629,7 +4127,7 @@ class LevelSelect extends Screen {
         ctx,
         `Level ${levelIndex + 1}`,
         x,
-        y + this.game.getScaledValue(65),
+        y - this.game.getScaledValue(65),
         {
           fontSize: layout.bodyFontSize,
           weight: "bold",
@@ -3663,25 +4161,51 @@ class LevelSelect extends Screen {
       }
 
       ctx.save();
-      ctx.fillStyle = isAffordable
-        ? "rgba(144, 238, 144, 0.8)"
-        : "rgba(255, 182, 193, 0.8)";
-      ctx.font = `${this.game.getScaledValue(24)}px Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
       ctx.shadowBlur = this.game.getScaledValue(4);
-      ctx.fillText("🔒", x, y - this.game.getScaledValue(15));
+
+      // Draw lock icon
+      if (this.game.images["icon-lock.png"]) {
+        const lockIcon = this.game.images["icon-lock.png"];
+        const lockIconHeight = this.game.getScaledValue(24);
+        const lockIconWidth =
+          lockIconHeight * (lockIcon.width / lockIcon.height);
+        ctx.drawImage(
+          lockIcon,
+          x - lockIconWidth / 2,
+          y - this.game.getScaledValue(15) - lockIconHeight / 2,
+          lockIconWidth,
+          lockIconHeight
+        );
+      }
       ctx.restore();
 
       ctx.save();
       ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
       ctx.shadowBlur = this.game.getScaledValue(4);
+
+      // Draw money icon
+      const costIconHeight = this.game.getScaledValue(24);
+      const costY = y + this.game.getScaledValue(15);
+
+      if (this.game.images["icon-money.png"]) {
+        const costMoneyIcon = this.game.images["icon-money.png"];
+        const costIconWidth =
+          costIconHeight * (costMoneyIcon.width / costMoneyIcon.height);
+        ctx.drawImage(
+          costMoneyIcon,
+          x - this.game.getScaledValue(35),
+          costY - costIconHeight / 2,
+          costIconWidth,
+          costIconHeight
+        );
+      }
+
       this.renderText(
         ctx,
-        `💰 ${levelCost}`,
-        x,
-        y + this.game.getScaledValue(15),
+        `${levelCost}`,
+        x + this.game.getScaledValue(5),
+        costY,
         {
           fontSize: layout.smallFontSize + 2,
           color: isAffordable ? "#90EE90" : "#FFB6C1",
@@ -3697,7 +4221,7 @@ class LevelSelect extends Screen {
         ctx,
         `Level ${levelIndex + 1}`,
         x,
-        y + this.game.getScaledValue(65),
+        y - this.game.getScaledValue(65),
         {
           fontSize: layout.bodyFontSize,
           color: "rgba(255, 255, 255, 0.6)",
@@ -3716,7 +4240,7 @@ class LevelSelect extends Screen {
           ctx,
           "Click to unlock!",
           x,
-          y + this.game.getScaledValue(85),
+          y + this.game.getScaledValue(65),
           {
             fontSize: layout.smallFontSize,
             color: "#90EE90",
@@ -3878,7 +4402,7 @@ class LevelSelect extends Screen {
     ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
     ctx.shadowBlur = this.game.getScaledValue(5);
     ctx.fillStyle = "#FFD700";
-    ctx.font = `bold ${this.game.getScaledValue(36)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(36)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillText(
@@ -3892,7 +4416,7 @@ class LevelSelect extends Screen {
     const levelNum = this.difficultyModal.selectedLevel + 1;
     ctx.save();
     ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-    ctx.font = `${this.game.getScaledValue(20)}px Courier New`;
+    ctx.font = `${this.game.getScaledValue(20)}px Arial`;
     ctx.textAlign = "center";
     ctx.fillText(
       `Level ${levelNum}`,
@@ -3909,7 +4433,7 @@ class LevelSelect extends Screen {
     // Instructions
     ctx.save();
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.font = `${this.game.getScaledValue(14)}px Courier New`;
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
     ctx.textAlign = "center";
     ctx.fillText(
       "Click outside to cancel",
@@ -3927,7 +4451,9 @@ class LevelSelect extends Screen {
       this.difficultyModal.hoveredDifficulty === button.difficulty;
     const isCompleted =
       this.game.completedLevelsByDifficulty[button.difficulty] &&
-      this.game.completedLevelsByDifficulty[button.difficulty][this.difficultyModal.selectedLevel];
+      this.game.completedLevelsByDifficulty[button.difficulty][
+        this.difficultyModal.selectedLevel
+      ];
 
     ctx.save();
 
@@ -3966,7 +4492,7 @@ class LevelSelect extends Screen {
     // Difficulty name with stars
     ctx.shadowBlur = 0;
     ctx.fillStyle = isCompleted ? "#FFD700" : "#FFFFFF";
-    ctx.font = `bold ${this.game.getScaledValue(24)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(24)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -3982,7 +4508,7 @@ class LevelSelect extends Screen {
 
     // Stats info
     ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-    ctx.font = `${this.game.getScaledValue(14)}px Courier New`;
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
 
     const statsText =
       button.difficulty === 0
@@ -3999,7 +4525,7 @@ class LevelSelect extends Screen {
     // Completion checkmark
     if (isCompleted) {
       ctx.fillStyle = "#FFD700";
-      ctx.font = `${this.game.getScaledValue(20)}px Courier New`;
+      ctx.font = `${this.game.getScaledValue(20)}px Arial`;
       ctx.fillText(
         "✓",
         button.x + this.game.getScaledValue(30),
@@ -4110,5 +4636,259 @@ class LevelSelect extends Screen {
     }
 
     return true; // Consume click to prevent background interaction
+  }
+
+  renderVideoButton(ctx) {
+    const layout = this.layoutCache;
+    const button = this.videoButton;
+    const buttonImage = this.game.images["secret-video-button.png"];
+
+    ctx.save();
+
+    const x = layout.videoButtonX - layout.videoButtonWidth / 2;
+    const y = layout.videoButtonY - layout.videoButtonHeight / 2;
+
+    if (buttonImage) {
+      // Use button image
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = layout.videoButtonWidth;
+      let imgHeight = imgWidth / aspectRatio;
+
+      // If height is too large, scale by height instead
+      if (imgHeight > layout.videoButtonHeight) {
+        imgHeight = layout.videoButtonHeight;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = x + (layout.videoButtonWidth - imgWidth) / 2;
+      const imgY = y + (layout.videoButtonHeight - imgHeight) / 2;
+
+      // Apply hover effect - scale and add glow
+      if (button.hovered) {
+        ctx.shadowColor = "rgba(187, 143, 206, 0.8)"; // Purple glow matching the button's theme
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = x + (layout.videoButtonWidth - scaledWidth) / 2;
+        const scaledY = y + (layout.videoButtonHeight - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    } else {
+      // Fallback to gradient style if image not loaded
+      const radius = this.game.getScaledValue(8);
+
+      // Enhanced gradient background
+      const gradient = ctx.createLinearGradient(
+        x,
+        y,
+        x,
+        y + layout.videoButtonHeight
+      );
+
+      let color1, color2;
+      if (button.hovered) {
+        color1 = "#BB8FCE";
+        color2 = "#A569BD";
+      } else {
+        color1 = "#A569BD";
+        color2 = "#8E44AD";
+      }
+
+      gradient.addColorStop(0, color1);
+      gradient.addColorStop(1, color2);
+      ctx.fillStyle = gradient;
+
+      if (button.hovered) {
+        ctx.shadowColor = "#BB8FCE";
+        ctx.shadowBlur = this.game.getScaledValue(12);
+      }
+
+      ctx.strokeStyle = button.hovered ? "#D7BDE2" : "#8E44AD";
+      ctx.lineWidth = this.game.getScaledValue(3);
+
+      // Draw rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + layout.videoButtonWidth - radius, y);
+      ctx.quadraticCurveTo(
+        x + layout.videoButtonWidth,
+        y,
+        x + layout.videoButtonWidth,
+        y + radius
+      );
+      ctx.lineTo(
+        x + layout.videoButtonWidth,
+        y + layout.videoButtonHeight - radius
+      );
+      ctx.quadraticCurveTo(
+        x + layout.videoButtonWidth,
+        y + layout.videoButtonHeight,
+        x + layout.videoButtonWidth - radius,
+        y + layout.videoButtonHeight
+      );
+      ctx.lineTo(x + radius, y + layout.videoButtonHeight);
+      ctx.quadraticCurveTo(
+        x,
+        y + layout.videoButtonHeight,
+        x,
+        y + layout.videoButtonHeight - radius
+      );
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+
+      ctx.fill();
+      ctx.stroke();
+
+      if (button.hovered) {
+        ctx.shadowColor = "#BB8FCE";
+        ctx.shadowBlur = this.game.getScaledValue(10);
+        ctx.stroke();
+      }
+
+      // Button text
+      this.renderText(
+        ctx,
+        "SECRET BONUS VIDEO",
+        layout.videoButtonX,
+        layout.videoButtonY,
+        {
+          fontSize: this.game.getScaledValue(18),
+          color: "white",
+          weight: "bold",
+        }
+      );
+    }
+
+    ctx.restore();
+  }
+
+  openVideoPlayer() {
+    this.videoPlayerActive = true;
+
+    // Pause background music while video plays
+    console.log("🎵 Pausing background music for video");
+    this.game.audioManager.pauseMusic();
+
+    try {
+      // Create video element
+      this.videoElement = document.createElement("video");
+      this.videoElement.src = "videos/video-end.mp4";
+      this.videoElement.loop = true;
+      this.videoElement.autoplay = true;
+      this.videoElement.controls = false;
+      this.videoElement.style.display = "none";
+
+      // Add error handlers
+      this.videoElement.addEventListener("error", () => {
+        console.error("🎥 Video failed to load");
+        this.closeVideoPlayer();
+      });
+
+      this.videoElement.addEventListener("loadeddata", () => {
+        console.log("🎥 Video loaded successfully");
+      });
+
+      document.body.appendChild(this.videoElement);
+      console.log("🎥 Video player opened");
+    } catch (error) {
+      console.error("🎥 Error creating video element:", error);
+      this.closeVideoPlayer();
+    }
+  }
+
+  closeVideoPlayer() {
+    this.videoPlayerActive = false;
+
+    // Clean up video element
+    if (this.videoElement) {
+      this.videoElement.pause();
+      this.videoElement.remove();
+      this.videoElement = null;
+    }
+
+    // Resume background music after video closes
+    console.log("🎵 Resuming background music after video");
+    this.game.audioManager.resumeMusic();
+
+    console.log("🎥 Video player closed");
+  }
+
+  renderVideoPlayer(ctx) {
+    const canvasWidth = this.game.getCanvasWidth();
+    const canvasHeight = this.game.getCanvasHeight();
+
+    ctx.save();
+
+    // Dark overlay
+    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Video container
+    const videoWidth = this.game.getScaledValue(640);
+    const videoHeight = this.game.getScaledValue(360);
+    const videoX = (canvasWidth - videoWidth) / 2;
+    const videoY = (canvasHeight - videoHeight) / 2;
+
+    // Container background
+    ctx.fillStyle = "rgba(20, 20, 20, 0.95)";
+    ctx.fillRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
+
+    // Border with glow
+    ctx.strokeStyle = "#BB8FCE";
+    ctx.lineWidth = this.game.getScaledValue(3);
+    ctx.shadowColor = "#BB8FCE";
+    ctx.shadowBlur = this.game.getScaledValue(15);
+    ctx.strokeRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
+
+    // Draw video frame if ready
+    if (this.videoElement && this.videoElement.readyState >= 2) {
+      try {
+        ctx.drawImage(
+          this.videoElement,
+          videoX,
+          videoY,
+          videoWidth,
+          videoHeight
+        );
+      } catch (error) {
+        console.error("🎥 Error drawing video frame:", error);
+        // Show error message
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#FF6B6B";
+        ctx.font = `${this.game.getScaledValue(24)}px Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Error loading video", canvasWidth / 2, canvasHeight / 2);
+      }
+    } else {
+      // Loading text
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = `${this.game.getScaledValue(24)}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Loading video...", canvasWidth / 2, canvasHeight / 2);
+    }
+
+    // Close button hint
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.font = `${this.game.getScaledValue(16)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(
+      "Press ESC or click outside to close",
+      canvasWidth / 2,
+      videoY + videoHeight + 30
+    );
+
+    ctx.restore();
   }
 }

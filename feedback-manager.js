@@ -39,6 +39,7 @@ class FeedbackManager {
 
     // Achievement notifications
     this.achievementNotifications = [];
+    this.notificationQueue = []; // Queue for pending notifications
   }
 
   update(deltaTime) {
@@ -92,36 +93,50 @@ class FeedbackManager {
     });
 
     // Update achievement notifications
-    this.achievementNotifications = this.achievementNotifications.filter((notif) => {
-      notif.timer -= deltaTime;
+    this.achievementNotifications = this.achievementNotifications.filter(
+      (notif) => {
+        notif.timer -= deltaTime;
 
-      // Slide in animation (first 300ms)
-      if (notif.slideIn < 1) {
-        notif.slideIn += deltaTime / 300;
-        notif.slideIn = Math.min(1, notif.slideIn);
+        // Slide in animation (first 300ms)
+        if (notif.slideIn < 1) {
+          notif.slideIn += deltaTime / 300;
+          notif.slideIn = Math.min(1, notif.slideIn);
+        }
+
+        // Fade in/out
+        const fadeInDuration = 300;
+        const fadeOutDuration = 500;
+        const elapsed = notif.duration - notif.timer;
+
+        if (elapsed < fadeInDuration) {
+          // Fade in
+          notif.alpha = elapsed / fadeInDuration;
+        } else if (notif.timer < fadeOutDuration) {
+          // Fade out
+          notif.alpha = notif.timer / fadeOutDuration;
+        } else {
+          // Full visibility
+          notif.alpha = 1;
+        }
+
+        return notif.timer > 0;
       }
+    );
 
-      // Fade in/out
-      const fadeInDuration = 300;
-      const fadeOutDuration = 500;
-      const elapsed = notif.duration - notif.timer;
-
-      if (elapsed < fadeInDuration) {
-        // Fade in
-        notif.alpha = elapsed / fadeInDuration;
-      } else if (notif.timer < fadeOutDuration) {
-        // Fade out
-        notif.alpha = notif.timer / fadeOutDuration;
-      } else {
-        // Full visibility
-        notif.alpha = 1;
-      }
-
-      return notif.timer > 0;
-    });
+    // Show next queued notification if current one is finished
+    if (
+      this.achievementNotifications.length === 0 &&
+      this.notificationQueue.length > 0
+    ) {
+      const nextNotification = this.notificationQueue.shift();
+      this.achievementNotifications.push(nextNotification);
+    }
 
     // Check streak timeout
-    if (now - this.lastMatchTime > this.streakTimeout && this.currentStreak > 0) {
+    if (
+      now - this.lastMatchTime > this.streakTimeout &&
+      this.currentStreak > 0
+    ) {
       this.currentStreak = 0;
     }
   }
@@ -216,7 +231,7 @@ class FeedbackManager {
 
   // Show achievement unlocked notification
   showAchievementUnlocked(achievement) {
-    this.achievementNotifications.push({
+    const notification = {
       achievement: achievement,
       x: this.game.getCanvasWidth() / 2,
       y: this.game.getScaledValue(60), // Near top of screen
@@ -225,7 +240,39 @@ class FeedbackManager {
       velocity: 0,
       timer: 3000, // 3 seconds total
       duration: 3000,
-    });
+      type: "achievement", // Mark as achievement type
+    };
+
+    // If no notification is currently showing, show immediately
+    if (this.achievementNotifications.length === 0) {
+      this.achievementNotifications.push(notification);
+    } else {
+      // Otherwise, add to queue
+      this.notificationQueue.push(notification);
+    }
+  }
+
+  // Show story panel unlocked notification
+  showStoryUnlocked(storyPanel) {
+    const notification = {
+      storyPanel: storyPanel,
+      x: this.game.getCanvasWidth() / 2,
+      y: this.game.getScaledValue(60), // Near top of screen
+      alpha: 0,
+      slideIn: 0, // Animation progress 0-1
+      velocity: 0,
+      timer: 3000, // 3 seconds total
+      duration: 3000,
+      type: "story", // Mark as story type
+    };
+
+    // If no notification is currently showing, show immediately
+    if (this.achievementNotifications.length === 0) {
+      this.achievementNotifications.push(notification);
+    } else {
+      // Otherwise, add to queue
+      this.notificationQueue.push(notification);
+    }
   }
 
   // Queue a dialogue message
@@ -265,9 +312,9 @@ class FeedbackManager {
     this.celebrationActive = true;
     this.celebrationTimer = this.celebrationDuration;
 
-    // Create celebration particles
-    const centerX = this.game.getCanvasWidth() / 2;
-    const centerY = this.game.getCanvasHeight() / 2;
+    // Create celebration particles centered on Martha
+    const centerX = this.marthaX + this.marthaWidth / 2;
+    const centerY = this.marthaY + this.marthaWidth / 2; // Use marthaWidth for approximate height
     const colors = ["#FFD700", "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A"];
 
     for (let i = 0; i < 30; i++) {
@@ -303,7 +350,7 @@ class FeedbackManager {
       ctx.save();
       ctx.globalAlpha = anim.alpha;
       ctx.fillStyle = anim.color;
-      ctx.font = `bold ${this.game.getScaledValue(anim.fontSize)}px Courier New`;
+      ctx.font = `bold ${this.game.getScaledValue(anim.fontSize)}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
@@ -403,7 +450,10 @@ class FeedbackManager {
   renderAchievementNotification(ctx, notif) {
     ctx.save();
 
+    // Determine if this is an achievement or story notification
+    const isStory = notif.type === "story";
     const achievement = notif.achievement;
+    const storyPanel = notif.storyPanel;
 
     // Smaller, more compact design
     const boxWidth = this.game.getScaledValue(320);
@@ -423,8 +473,10 @@ class FeedbackManager {
     this.drawRoundedRect(ctx, x, y, boxWidth, boxHeight, radius);
     ctx.fill();
 
-    // Subtle gold border
-    ctx.strokeStyle = "rgba(255, 215, 0, 0.7)";
+    // Subtle gold border (purple for story, gold for achievement)
+    ctx.strokeStyle = isStory
+      ? "rgba(147, 112, 219, 0.7)"
+      : "rgba(255, 215, 0, 0.7)";
     ctx.lineWidth = this.game.getScaledValue(2);
     this.drawRoundedRect(ctx, x, y, boxWidth, boxHeight, radius);
     ctx.stroke();
@@ -434,24 +486,84 @@ class FeedbackManager {
     ctx.shadowBlur = 0;
     ctx.globalAlpha = notif.alpha;
 
-    // Achievement icon (smaller)
+    // Icon (smaller)
     const iconX = x + this.game.getScaledValue(20);
     const iconY = y + boxHeight / 2;
     ctx.font = `${this.game.getScaledValue(24)}px Arial`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#FFD700";
-    ctx.fillText(achievement.icon, iconX, iconY);
 
-    // Simple text: "Achievement Unlocked: Name"
+    if (isStory) {
+      // Story icon
+      ctx.fillStyle = "#9370DB";
+      ctx.fillText("📖", iconX, iconY);
+    } else {
+      // Achievement icon - check if it's an image or emoji
+      if (achievement.icon.endsWith('.png')) {
+        // Render as image with aspect ratio maintained
+        const maxIconSize = this.game.getScaledValue(24);
+        const iconImage = this.game.images[achievement.icon];
+        if (iconImage) {
+          const aspectRatio = iconImage.width / iconImage.height;
+          let iconWidth, iconHeight;
+
+          if (aspectRatio > 1) {
+            // Wider than tall
+            iconWidth = maxIconSize;
+            iconHeight = maxIconSize / aspectRatio;
+          } else {
+            // Taller than wide or square
+            iconHeight = maxIconSize;
+            iconWidth = maxIconSize * aspectRatio;
+          }
+
+          ctx.drawImage(
+            iconImage,
+            iconX,
+            iconY - iconHeight / 2,
+            iconWidth,
+            iconHeight
+          );
+        }
+      } else {
+        // Render as emoji text
+        ctx.fillStyle = "#FFD700";
+        ctx.fillText(achievement.icon, iconX, iconY);
+      }
+    }
+
+    // Simple text
     const textX = iconX + this.game.getScaledValue(35);
-    ctx.font = `bold ${this.game.getScaledValue(14)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(14)}px Arial`;
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-    ctx.fillText("Achievement Unlocked:", textX, iconY - this.game.getScaledValue(8));
 
-    ctx.font = `bold ${this.game.getScaledValue(16)}px Courier New`;
-    ctx.fillStyle = "#FFD700";
-    ctx.fillText(achievement.name, textX, iconY + this.game.getScaledValue(10));
+    if (isStory) {
+      ctx.fillText(
+        "Story Panel Unlocked:",
+        textX,
+        iconY - this.game.getScaledValue(8)
+      );
+      ctx.font = `bold ${this.game.getScaledValue(16)}px Arial`;
+      ctx.fillStyle = "#9370DB";
+      ctx.fillText(
+        storyPanel.title,
+        textX,
+        iconY + this.game.getScaledValue(10)
+      );
+    } else {
+      ctx.fillText(
+        "Achievement Unlocked:",
+        textX,
+        iconY - this.game.getScaledValue(8)
+      );
+      ctx.font = `bold ${this.game.getScaledValue(16)}px Arial`;
+      ctx.fillStyle = "#FFD700";
+      ctx.fillText(
+        achievement.name,
+        textX,
+        iconY + this.game.getScaledValue(10)
+      );
+    }
 
     ctx.restore();
   }
@@ -482,6 +594,6 @@ class FeedbackManager {
     this.lastActionTime = Date.now();
     this.lastEncouragementTime = 0;
     this.feedbackAnimations = [];
-    // Don't reset achievement notifications - they should persist across screens
+    // Don't reset achievement notifications or queue - they should persist across screens
   }
 }

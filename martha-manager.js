@@ -28,6 +28,7 @@ class MarthaManager {
     this.animationTimer = 0;
     this.currentFrameIndex = 0;
     this.facingRight = true;
+    this.spritesheetConfig = GameConfig.MARTHA_SPRITESHEET; // Will be updated based on difficulty
 
     // Hit effects
     this.hitEffect = {
@@ -43,6 +44,12 @@ class MarthaManager {
     this.isExiting = false;
     this.isEntering = false;
     this.exitDirection = 1; // 1 for right, -1 for left
+
+    // Recovery animation state
+    this.isRecovering = false;
+    this.recoveryTimer = 0;
+    this.recoveryDuration = 1000; // 1 second in milliseconds
+    this.recoveryDirection = { x: 0, y: 0 };
 
     // Sockball collection
     this.collectedSockballs = 0;
@@ -92,6 +99,23 @@ class MarthaManager {
     this.speed = level.marthaSpeed;
     this.availablePatterns = level.marthaPatterns;
     this.patternSpeed = level.marthaPatternSpeed;
+
+    // Select spritesheet based on difficulty (New Game+ uses crawling animation)
+    if (this.game.currentDifficulty > 0) {
+      this.spritesheetConfig = GameConfig.MARTHA_CRAWLING_SPRITESHEET;
+
+      // Adjust Martha's size to maintain aspect ratio of crawling sprite
+      const frameAspectRatio = this.spritesheetConfig.frameWidth / this.spritesheetConfig.frameHeight;
+      // Keep height the same, adjust width based on aspect ratio
+      this.height = GameConfig.MARTHA_SIZE.height;
+      this.width = this.height * frameAspectRatio;
+    } else {
+      this.spritesheetConfig = GameConfig.MARTHA_SPRITESHEET;
+
+      // Use default Martha size for running animation
+      this.width = GameConfig.MARTHA_SIZE.width;
+      this.height = GameConfig.MARTHA_SIZE.height;
+    }
 
     // Setup rent due meter
     this.rentDueMeter.current = 0;
@@ -145,7 +169,9 @@ class MarthaManager {
     }
 
     // Update movement based on current state
-    if (this.isExiting) {
+    if (this.isRecovering) {
+      this.updateRecoveryMovement(deltaTime);
+    } else if (this.isExiting) {
       this.updateExitMovement(deltaTime);
     } else if (this.isEntering) {
       this.updateEnterMovement(deltaTime);
@@ -179,15 +205,13 @@ class MarthaManager {
     if (isMoving) {
       this.animationTimer += deltaTime;
 
-      // Animation speed should be proportional to movement speed
-      const movementSpeed = Math.sqrt(
-        this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y
-      );
-      const animationSpeed = Math.max(200, 400 - movementSpeed * 50); // Faster animation for faster movement
+      // Use FPS from the current spritesheet config
+      const animationSpeed = 1000 / this.spritesheetConfig.fps;
 
       if (this.animationTimer >= animationSpeed) {
         this.currentFrameIndex =
-          (this.currentFrameIndex + 1) % GameConfig.MARTHA_FRAMES.length;
+          (this.currentFrameIndex + 1) %
+          this.spritesheetConfig.animationFrames.length;
         this.animationTimer = 0;
       }
     }
@@ -255,6 +279,29 @@ class MarthaManager {
     }
   }
 
+  updateRecoveryMovement(deltaTime) {
+    // Update recovery timer
+    this.recoveryTimer += deltaTime;
+
+    // Apply recovery movement (faster speed to get away from edge)
+    const recoverySpeed = this.speed * 5; // Move fast to recover
+    this.velocity.x = this.recoveryDirection.x * recoverySpeed;
+    this.velocity.y = this.recoveryDirection.y * recoverySpeed;
+
+    // Update facing direction during recovery
+    if (Math.abs(this.velocity.x) > 0.1) {
+      this.facingRight = this.velocity.x > 0;
+    }
+
+    // End recovery after duration
+    if (this.recoveryTimer >= this.recoveryDuration) {
+      this.isRecovering = false;
+      this.recoveryTimer = 0;
+      // Switch to a new random pattern after recovery
+      this.switchPattern();
+    }
+  }
+
   updatePatternMovement(deltaTime) {
     const timeMultiplier = deltaTime / 16.67;
 
@@ -318,16 +365,36 @@ class MarthaManager {
 
   updateCircularPattern(timeMultiplier) {
     const baseSpeed = GameConfig.MARTHA_PATTERNS.CIRCULAR.baseSpeed;
-    if (!this.patternData.circularAngle) {
-      this.patternData.circularAngle = 0;
+    if (
+      !this.patternData.circularAngle &&
+      this.patternData.circularAngle !== 0
+    ) {
+      // Set center of circular path
       this.patternData.centerX =
         this.bounds.left + (this.bounds.right - this.bounds.left) / 2;
       this.patternData.centerY =
         this.bounds.top + (this.bounds.bottom - this.bounds.top) / 2;
-      // Larger radius for more interesting circular movement
-      this.patternData.radius = Math.min(
+
+      // Calculate starting angle AND radius from Martha's current position
+      // This prevents the "jump" - Martha starts from where she is
+      const dx = this.x + this.width / 2 - this.patternData.centerX;
+      const dy = this.y + this.height / 2 - this.patternData.centerY;
+      this.patternData.circularAngle = Math.atan2(dy, dx);
+
+      // Use Martha's current distance from center as the radius
+      // This ensures she's already ON the circle path at the start
+      const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+      // Use current distance, but clamp it to reasonable bounds
+      const maxRadius = Math.min(
         (this.bounds.right - this.bounds.left) / 2.8,
         (this.bounds.bottom - this.bounds.top) / 2.8
+      );
+      const minRadius = Math.min(maxRadius * 0.5, 150); // At least half max radius or 150px
+
+      this.patternData.radius = Math.max(
+        minRadius,
+        Math.min(maxRadius, currentDistance)
       );
     }
 
@@ -388,8 +455,10 @@ class MarthaManager {
       const launchX = GameConfig.SOCKBALL_LAUNCH_POSITION.x;
       const launchY = GameConfig.SOCKBALL_LAUNCH_POSITION.y;
 
-      if (this.x < launchX + restrictedZoneSize &&
-          this.y > launchY - restrictedZoneSize) {
+      if (
+        this.x < launchX + restrictedZoneSize &&
+        this.y > launchY - restrictedZoneSize
+      ) {
         // Push Martha away from the lower left corner
         this.velocity.x = Math.abs(this.velocity.x) + 2; // Force right
         this.velocity.y = -Math.abs(this.velocity.y) - 2; // Force up
@@ -415,15 +484,14 @@ class MarthaManager {
         }
       }
 
-      // Right boundary
+      // Right boundary - trigger recovery animation
       if (this.x > this.bounds.right - this.width) {
         this.x = this.bounds.right - this.width;
-        this.velocity.x = -Math.abs(this.velocity.x); // Bounce left
-        if (this.currentPattern === "horizontal") {
-          this.direction = -1;
-        } else if (this.patternData.diagonalDirection) {
-          this.patternData.diagonalDirection.x = -1;
-        }
+        // Start recovery animation moving left
+        this.isRecovering = true;
+        this.recoveryTimer = 0;
+        this.recoveryDirection = { x: -1, y: 0 };
+        this.facingRight = false;
       }
 
       // Top boundary
@@ -437,24 +505,51 @@ class MarthaManager {
         }
       }
 
-      // Bottom boundary
+      // Bottom boundary - trigger recovery animation
       if (this.y > this.bounds.bottom - this.height) {
         this.y = this.bounds.bottom - this.height;
-        this.velocity.y = -Math.abs(this.velocity.y); // Bounce up
-        if (this.currentPattern === "vertical") {
-          this.direction = -1;
-        } else if (this.patternData.diagonalDirection) {
-          this.patternData.diagonalDirection.y = -1;
-        }
+        // Start recovery animation moving up
+        this.isRecovering = true;
+        this.recoveryTimer = 0;
+        this.recoveryDirection = { x: 0, y: -1 };
       }
 
-      // Ensure Martha is always moving (minimum velocity)
-      const currentSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y);
-      const minSpeed = 1.0;
-      if (currentSpeed < minSpeed) {
-        // If moving too slowly, give a small push in current direction or default right
-        const defaultDirection = this.direction || 1;
-        this.velocity.x = defaultDirection * minSpeed;
+      // Ensure Martha is always moving (minimum velocity) - skip during recovery
+      if (!this.isRecovering) {
+        const currentSpeed = Math.sqrt(
+          this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y
+        );
+        const minSpeed = 1.0;
+        if (currentSpeed < minSpeed) {
+          // If moving too slowly, give a small push
+          // Check if stuck at edges and push away from them
+          const edgeThreshold = 5; // Pixels from edge to consider "at edge"
+
+          if (this.x <= this.bounds.left + edgeThreshold) {
+            // Stuck at left edge - push right
+            this.velocity.x = minSpeed;
+            this.velocity.y = 0;
+          } else if (this.x >= this.bounds.right - this.width - edgeThreshold) {
+            // Stuck at right edge - push left (this should now be handled by recovery)
+            this.velocity.x = -minSpeed;
+            this.velocity.y = 0;
+          } else if (this.y <= this.bounds.top + edgeThreshold) {
+            // Stuck at top edge - push down
+            this.velocity.x = 0;
+            this.velocity.y = minSpeed;
+          } else if (
+            this.y >=
+            this.bounds.bottom - this.height - edgeThreshold
+          ) {
+            // Stuck at bottom edge - push up (this should now be handled by recovery)
+            this.velocity.x = 0;
+            this.velocity.y = -minSpeed;
+          } else {
+            // Not at edge, use current direction or default right
+            const defaultDirection = this.direction || 1;
+            this.velocity.x = defaultDirection * minSpeed;
+          }
+        }
       }
 
       // Update facing direction based on velocity
@@ -496,7 +591,9 @@ class MarthaManager {
     const normalizedDistance = distance / maxDistance;
 
     // Determine catch quality
-    if (normalizedDistance <= GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD) {
+    if (
+      normalizedDistance <= GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD
+    ) {
       return {
         quality: "PERFECT",
         data: GameConfig.CATCH_QUALITY.PERFECT,
@@ -516,13 +613,15 @@ class MarthaManager {
     }
   }
 
-  hitBySockball(sockball, forcedQuality = null) {
+  hitBySockball(sockball, forcedQuality = null, isBonusHit = false) {
     if (this.hitEffect.active) return false; // Already hit recently
 
-    this.collectedSockballs++;
-
-    // Update rent due meter
-    this.rentDueMeter.current = this.collectedSockballs;
+    // Bonus hits don't count toward Martha's collection (they're extra!)
+    if (!isBonusHit) {
+      this.collectedSockballs++;
+      // Update rent due meter
+      this.rentDueMeter.current = this.collectedSockballs;
+    }
 
     // Phase 2.1 - Use forced quality (from zone tracking) or calculate it
     let catchQuality;
@@ -550,8 +649,8 @@ class MarthaManager {
     // Add points based on catch quality
     this.game.playerPoints += points;
 
-    // Play Martha hit sound
-    this.game.audioManager.playSound("martha-hit", false, 0.5);
+    // Play random goblin sound (8 different sounds)
+    this.game.audioManager.playRandomSound("goblin-sound", 8, false, 0.5);
 
     // Activate hit effect
     this.hitEffect.active = true;
@@ -663,13 +762,6 @@ class MarthaManager {
       ctx.fillStyle = fillColor;
       ctx.fillRect(meterX, meterY, fillWidth, meter.height);
     }
-
-    // Draw text label
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `${this.game.getScaledValue(10)}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.fillText("RENT DUE", meterX + meter.width / 2, meterY - 2);
   }
 
   renderCatchZones(ctx) {
@@ -679,14 +771,36 @@ class MarthaManager {
     const baseRadius = this.width / 2;
 
     // Get the catch radius with multiplier
-    const catchRadius = baseRadius * GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
+    const catchRadius =
+      baseRadius * GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
 
     // Calculate zone radii based on thresholds
-    const perfectRadius = baseRadius * GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD;
-    const goodRadius = baseRadius * GameConfig.CATCH_MECHANICS.GOOD_CATCH_THRESHOLD;
+    const perfectRadius =
+      baseRadius * GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD;
+    const goodRadius =
+      baseRadius * GameConfig.CATCH_MECHANICS.GOOD_CATCH_THRESHOLD;
     const regularRadius = catchRadius;
 
     ctx.save();
+
+    // If Martha is exiting/entering, show BONUS zone indicator!
+    if (this.isExiting || this.isEntering) {
+      // Pulsing bonus indicator
+      const pulseIntensity = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+
+      // Outer bonus glow
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, regularRadius * 1.3, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 105, 180, ${0.6 * pulseIntensity})`; // Hot pink
+      ctx.lineWidth = 4;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255, 105, 180, ${0.15 * pulseIntensity})`;
+      ctx.fill();
+
+      // Reset line dash for regular zones
+      ctx.setLineDash([]);
+    }
 
     // Draw Regular catch zone (outermost) - Blue
     ctx.beginPath();
@@ -741,22 +855,57 @@ class MarthaManager {
       }%)`;
     }
 
-    // Get the current animation frame
-    const frameIndex = GameConfig.MARTHA_FRAMES[this.currentFrameIndex];
-    const marthaImage =
-      this.game.images[GameConfig.IMAGES.CHARACTERS[frameIndex]];
+    // Get the current animation frame from spritesheet
+    const spritesheet = this.spritesheetConfig;
+    const frameNumber = spritesheet.animationFrames[this.currentFrameIndex];
+    const marthaImage = this.game.images[spritesheet.filename];
 
-    // Draw Martha
-    if (marthaImage) {
+    // Debug logging
+    if (!marthaImage && !this._loggedImageError) {
+      console.error("Martha spritesheet not found!", {
+        filename: spritesheet.filename,
+        availableImages: Object.keys(this.game.images),
+      });
+      this._loggedImageError = true;
+    }
+
+    // Draw Martha using spritesheet
+    if (marthaImage && marthaImage.complete && marthaImage.naturalWidth > 0) {
       ctx.save();
+
+      // Calculate which frame in the spritesheet to draw
+      const col = frameNumber % spritesheet.columns;
+      const row = Math.floor(frameNumber / spritesheet.columns);
+      const sx = col * spritesheet.frameWidth;
+      const sy = row * spritesheet.frameHeight;
 
       // Flip horizontally if facing right (sprite faces left by default)
       if (this.facingRight) {
         ctx.translate(this.x + this.width, this.y);
         ctx.scale(-1, 1);
-        ctx.drawImage(marthaImage, 0, 0, this.width, this.height);
+        ctx.drawImage(
+          marthaImage,
+          sx,
+          sy,
+          spritesheet.frameWidth,
+          spritesheet.frameHeight,
+          0,
+          0,
+          this.width,
+          this.height
+        );
       } else {
-        ctx.drawImage(marthaImage, this.x, this.y, this.width, this.height);
+        ctx.drawImage(
+          marthaImage,
+          sx,
+          sy,
+          spritesheet.frameWidth,
+          spritesheet.frameHeight,
+          this.x,
+          this.y,
+          this.width,
+          this.height
+        );
       }
 
       ctx.restore();
@@ -784,7 +933,7 @@ class MarthaManager {
     // Phase 2.1 - Draw point popups with quality colors
     this.hitEffect.pointPopups.forEach((popup) => {
       ctx.fillStyle = popup.color || "#ffd700";
-      ctx.font = `bold ${this.game.getScaledValue(20)}px Courier New`;
+      ctx.font = `bold ${this.game.getScaledValue(20)}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 

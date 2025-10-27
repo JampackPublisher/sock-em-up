@@ -146,7 +146,7 @@ class ThrowingScreen extends Screen {
   }
 
   clearAllTimeouts() {
-    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this.activeTimeouts = [];
   }
 
@@ -230,13 +230,19 @@ class ThrowingScreen extends Screen {
         this.keyboardAimX = Math.max(0, this.keyboardAimX - moveSpeed);
         break;
       case "ArrowRight":
-        this.keyboardAimX = Math.min(canvasWidth, this.keyboardAimX + moveSpeed);
+        this.keyboardAimX = Math.min(
+          canvasWidth,
+          this.keyboardAimX + moveSpeed
+        );
         break;
       case "ArrowUp":
         this.keyboardAimY = Math.max(0, this.keyboardAimY - moveSpeed);
         break;
       case "ArrowDown":
-        this.keyboardAimY = Math.min(canvasHeight, this.keyboardAimY + moveSpeed);
+        this.keyboardAimY = Math.min(
+          canvasHeight,
+          this.keyboardAimY + moveSpeed
+        );
         break;
     }
 
@@ -373,6 +379,12 @@ class ThrowingScreen extends Screen {
     const deltaX = targetX - x;
     const deltaY = targetY - y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    // Prevent division by zero if target position equals launch position
+    if (distance === 0) {
+      return;
+    }
+
     const normalizedVelocity = GameConfig.SOCKBALL_THROW_SPEED / distance;
 
     let vx = deltaX * normalizedVelocity;
@@ -436,14 +448,21 @@ class ThrowingScreen extends Screen {
 
       // Check collision with Martha using zone-based catching
       // Ball must enter a zone and then start moving away before being caught
+      // Allow bonus hits when Martha is exiting/entering - these give bonus points!
+      const isBonusHit =
+        this.marthaManager.isExiting || this.marthaManager.isEntering;
+
       const marthaCenterX = this.marthaManager.x + this.marthaManager.width / 2;
-      const marthaCenterY = this.marthaManager.y + this.marthaManager.height / 2;
+      const marthaCenterY =
+        this.marthaManager.y + this.marthaManager.height / 2;
       const dx = sockball.x - marthaCenterX;
       const dy = sockball.y - marthaCenterY;
       const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
       // Check if in catch zone
-      const catchRadius = (this.marthaManager.width / 2) * GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
+      const catchRadius =
+        (this.marthaManager.width / 2) *
+        GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
       const sockballRadius = GameConfig.SOCKBALL_SIZE / 2;
       const inCatchZone = currentDistance <= catchRadius + sockballRadius;
 
@@ -455,18 +474,25 @@ class ThrowingScreen extends Screen {
         const normalizedDistance = currentDistance / maxDistance;
         let currentZone = null;
 
-        if (normalizedDistance <= GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD) {
+        if (
+          normalizedDistance <=
+          GameConfig.CATCH_MECHANICS.PERFECT_CATCH_THRESHOLD
+        ) {
           currentZone = "PERFECT";
-        } else if (normalizedDistance <= GameConfig.CATCH_MECHANICS.GOOD_CATCH_THRESHOLD) {
+        } else if (
+          normalizedDistance <= GameConfig.CATCH_MECHANICS.GOOD_CATCH_THRESHOLD
+        ) {
           currentZone = "GOOD";
         } else {
           currentZone = "REGULAR";
         }
 
         // Track the best zone entered (PERFECT > GOOD > REGULAR)
-        if (!sockball.bestZoneEntered ||
-            (currentZone === "PERFECT") ||
-            (currentZone === "GOOD" && sockball.bestZoneEntered === "REGULAR")) {
+        if (
+          !sockball.bestZoneEntered ||
+          currentZone === "PERFECT" ||
+          (currentZone === "GOOD" && sockball.bestZoneEntered === "REGULAR")
+        ) {
           sockball.bestZoneEntered = currentZone;
         }
 
@@ -475,36 +501,69 @@ class ThrowingScreen extends Screen {
 
         // Catch the ball if it's moving away and has entered a zone
         if (movingAway && sockball.bestZoneEntered) {
-          const catchQuality = this.marthaManager.hitBySockball(sockball, sockball.bestZoneEntered);
+          // Pass bonus flag to Martha manager if she's exiting/entering
+          const catchQuality = this.marthaManager.hitBySockball(
+            sockball,
+            sockball.bestZoneEntered,
+            isBonusHit
+          );
           if (catchQuality) {
             // Track catch quality counts for score screen
-            if (this.game.catchQualityCounts && this.game.catchQualityCounts[catchQuality] !== undefined) {
+            if (
+              this.game.catchQualityCounts &&
+              this.game.catchQualityCounts[catchQuality] !== undefined
+            ) {
               this.game.catchQualityCounts[catchQuality]++;
             }
 
-            // Play particle burst sound when sockball hits Martha
             this.game.audioManager.playSound("particle-burst", false, 0.4);
 
-            // Play points gained sound
             this.game.audioManager.playSound("points-gained", false, 0.3);
 
-            // Track consecutive hits for Deadeye achievement
             this.consecutiveHits++;
 
-            // Phase 2.2 - Notify feedback manager of catch quality
-            if (catchQuality === "PERFECT") {
+            if (isBonusHit) {
+              // Bonus hits get special message but use normal quality feedback
+              this.showMessage("BONUS CATCH!", "success", 1500);
+              if (catchQuality === "PERFECT") {
+                this.game.feedbackManager.onPerfectCatch();
+                this.game.consecutivePerfectThrows++;
+                this.game.consecutiveMisses = 0;
+
+                // Achievement: SOCK_SNIPER (3 perfect throws in a row)
+                if (this.game.consecutivePerfectThrows >= 3) {
+                  this.game.unlockAchievement("sock_sniper");
+                }
+              } else if (catchQuality === "GOOD") {
+                this.game.feedbackManager.onGoodCatch();
+                this.game.consecutivePerfectThrows = 0;
+              } else {
+                this.game.feedbackManager.onRegularCatch();
+                this.game.consecutivePerfectThrows = 0;
+              }
+            } else if (catchQuality === "PERFECT") {
               this.game.feedbackManager.onPerfectCatch();
               this.perfectThrowsThisLevel++;
 
               // Achievement: PERFECT_THROW
               this.game.unlockAchievement("perfect_throw");
+
+              // Track consecutive perfect throws for Sock Sniper
+              this.game.consecutivePerfectThrows++;
+              this.game.consecutiveMisses = 0;
+
+              // Achievement: SOCK_SNIPER (3 perfect throws in a row)
+              if (this.game.consecutivePerfectThrows >= 3) {
+                this.game.unlockAchievement("sock_sniper");
+              }
             } else if (catchQuality === "GOOD") {
               this.game.feedbackManager.onGoodCatch();
+              this.game.consecutivePerfectThrows = 0; // Reset perfect streak
             } else {
               this.game.feedbackManager.onRegularCatch();
+              this.game.consecutivePerfectThrows = 0; // Reset perfect streak
             }
 
-            // Achievement: DEADEYE (10 hits in a row)
             if (this.consecutiveHits >= 10) {
               this.game.unlockAchievement("deadeye");
             }
@@ -519,6 +578,16 @@ class ThrowingScreen extends Screen {
         // Ball left catch zone without being caught - it's a miss
         this.missedThrows++;
         this.consecutiveHits = 0;
+
+        // Track consecutive misses for Butterfingers
+        this.game.consecutiveMisses++;
+        this.game.consecutivePerfectThrows = 0;
+
+        // Achievement: BUTTERFINGERS (miss 5 throws in a row)
+        if (this.game.consecutiveMisses >= 5) {
+          this.game.unlockAchievement("butterfingers");
+        }
+
         return false;
       }
 
@@ -549,18 +618,21 @@ class ThrowingScreen extends Screen {
         this.levelComplete = true;
         this.gamePhase = "complete";
 
-        // Play victory music and level complete sound
+        // Fix Bug #5: Set flag BEFORE scheduling timeout to prevent race condition
         if (!this.levelCompleteAudioPlayed) {
+          this.levelCompleteAudioPlayed = true; // Set flag first
           this.game.audioManager.fadeOutMusic(1000);
           const audioTimeoutId = setTimeout(() => {
             this.game.audioManager.playMusic("victory-music", false, 0.4);
             this.game.audioManager.playSound("level-complete", false, 0.6);
           }, 1000);
           this.activeTimeouts.push(audioTimeoutId);
-          this.levelCompleteAudioPlayed = true;
         }
 
-        const completeLevelTimeoutId = setTimeout(() => this.game.completeLevel(), 1000);
+        const completeLevelTimeoutId = setTimeout(
+          () => this.game.completeLevel(),
+          1000
+        );
         this.activeTimeouts.push(completeLevelTimeoutId);
       }
     } else if (!hasActiveSockballs && !hasAvailableSockballs) {
@@ -578,18 +650,24 @@ class ThrowingScreen extends Screen {
         this.levelComplete = true;
         this.gamePhase = "complete";
 
-        // Play defeat music and game over sound
+        // Achievement: EVICTION_NOTICE (lose a level)
+        this.game.unlockAchievement("eviction_notice");
+
+        // Fix Bug #5: Set flag BEFORE scheduling timeout to prevent race condition
         if (!this.gameOverAudioPlayed) {
+          this.gameOverAudioPlayed = true; // Set flag first
           this.game.audioManager.fadeOutMusic(1000);
           const audioTimeoutId = setTimeout(() => {
             this.game.audioManager.playMusic("defeat-music", false, 0.4);
             this.game.audioManager.playSound("game-over", false, 0.6);
           }, 1000);
           this.activeTimeouts.push(audioTimeoutId);
-          this.gameOverAudioPlayed = true;
         }
 
-        const completeLevelTimeoutId = setTimeout(() => this.game.completeLevel(), 1000);
+        const completeLevelTimeoutId = setTimeout(
+          () => this.game.completeLevel(),
+          1000
+        );
         this.activeTimeouts.push(completeLevelTimeoutId);
       }
     } else if (
@@ -617,6 +695,9 @@ class ThrowingScreen extends Screen {
   }
 
   onUpdate(deltaTime) {
+    // Fix Bug #6: Update parent class timers
+    this.updateAnimationTimers(deltaTime);
+
     this.marthaManager.update(deltaTime);
     this.updateSockballs(deltaTime);
     this.checkGameEnd();
@@ -835,41 +916,70 @@ class ThrowingScreen extends Screen {
     ctx.restore();
 
     // Sockballs counter (left side)
-    this.renderText(ctx, "🎯", layout.sockballCounterX - this.game.getScaledValue(25), layout.sockballCounterY, {
-      fontSize: layout.headerFontSize,
-      align: "center",
-      baseline: "middle",
-    });
+    // Draw sock icon
+    if (this.game.images["icon-sock.png"]) {
+      const sockIcon = this.game.images["icon-sock.png"];
+      const sockIconHeight = this.game.getScaledValue(40);
+      const sockIconWidth = sockIconHeight * (sockIcon.width / sockIcon.height);
+      ctx.drawImage(
+        sockIcon,
+        layout.sockballCounterX - this.game.getScaledValue(25) - sockIconWidth / 2,
+        layout.sockballCounterY - sockIconHeight / 2,
+        sockIconWidth,
+        sockIconHeight
+      );
+    }
 
-    this.renderText(ctx, `${this.availableSockballs}`, layout.sockballCounterX + this.game.getScaledValue(10), layout.sockballCounterY, {
-      fontSize: layout.headerFontSize,
-      align: "left",
-      baseline: "middle",
-      color: "rgba(255, 215, 0, 0.9)",
-      weight: "bold",
-    });
+    this.renderText(
+      ctx,
+      `${this.availableSockballs}`,
+      layout.sockballCounterX + this.game.getScaledValue(10),
+      layout.sockballCounterY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 215, 0, 0.9)",
+        weight: "bold",
+      }
+    );
 
     // Martha status
-    this.renderText(ctx, "Martha:", layout.marthaStatusX - this.game.getScaledValue(60), layout.marthaStatusY, {
-      fontSize: layout.bodyFontSize,
-      align: "left",
-      baseline: "middle",
-      color: "rgba(255, 255, 255, 0.9)",
-    });
+    this.renderText(
+      ctx,
+      "Martha:",
+      layout.marthaStatusX - this.game.getScaledValue(60),
+      layout.marthaStatusY,
+      {
+        fontSize: layout.bodyFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 255, 255, 0.9)",
+      }
+    );
 
     const marthaText = `${this.marthaManager.collectedSockballs}/${this.marthaManager.sockballsWanted}`;
-    this.renderText(ctx, marthaText, layout.marthaStatusX + this.game.getScaledValue(35), layout.marthaStatusY, {
-      fontSize: layout.headerFontSize,
-      align: "left",
-      baseline: "middle",
-      color: "rgba(76, 175, 80, 0.9)",
-      weight: "bold",
-    });
+    this.renderText(
+      ctx,
+      marthaText,
+      layout.marthaStatusX + this.game.getScaledValue(35),
+      layout.marthaStatusY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(76, 175, 80, 0.9)",
+        weight: "bold",
+      }
+    );
 
     // Throw cooldown bar
     const currentTime = Date.now();
     const timeSinceLastThrow = currentTime - this.lastThrowTime;
-    const cooldownProgress = Math.min(timeSinceLastThrow / this.throwCooldownDuration, 1);
+    const cooldownProgress = Math.min(
+      timeSinceLastThrow / this.throwCooldownDuration,
+      1
+    );
 
     this.renderProgressBar(
       ctx,
@@ -924,36 +1034,95 @@ class ThrowingScreen extends Screen {
 
     const buttonLeft = x - width / 2;
     const buttonTop = y - height / 2;
-    const radius = this.game.getScaledValue(6);
 
-    // Button background
-    ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
-    ctx.strokeStyle = isHovered ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 2;
+    // Check if this is the exit button and we have the image
+    const isExitButton = text === "Exit";
+    const buttonImage = isExitButton ? this.game.images["btn-exit.png"] : null;
 
-    // Rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(buttonLeft + radius, buttonTop);
-    ctx.lineTo(buttonLeft + width - radius, buttonTop);
-    ctx.arcTo(buttonLeft + width, buttonTop, buttonLeft + width, buttonTop + radius, radius);
-    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
-    ctx.arcTo(buttonLeft + width, buttonTop + height, buttonLeft + width - radius, buttonTop + height, radius);
-    ctx.lineTo(buttonLeft + radius, buttonTop + height);
-    ctx.arcTo(buttonLeft, buttonTop + height, buttonLeft, buttonTop + height - radius, radius);
-    ctx.lineTo(buttonLeft, buttonTop + radius);
-    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    if (buttonImage) {
+      // Use button image
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = width;
+      let imgHeight = imgWidth / aspectRatio;
 
-    // Button text
-    this.renderText(ctx, text, x, y, {
-      fontSize: this.layoutCache.smallFontSize,
-      align: "center",
-      baseline: "middle",
-      color: "rgba(255, 255, 255, 0.9)",
-      weight: "bold",
-    });
+      // If height is too large, scale by height instead
+      if (imgHeight > height) {
+        imgHeight = height;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = buttonLeft + (width - imgWidth) / 2;
+      const imgY = buttonTop + (height - imgHeight) / 2;
+
+      // Apply hover effect - scale and add glow
+      if (isHovered) {
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = buttonLeft + (width - scaledWidth) / 2;
+        const scaledY = buttonTop + (height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    } else {
+      // Fallback for other buttons - use gradient style
+      const radius = this.game.getScaledValue(6);
+
+      // Button background
+      ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+      ctx.strokeStyle = isHovered
+        ? "rgba(255, 255, 255, 0.8)"
+        : "rgba(255, 255, 255, 0.4)";
+      ctx.lineWidth = 2;
+
+      // Rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(buttonLeft + radius, buttonTop);
+      ctx.lineTo(buttonLeft + width - radius, buttonTop);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop,
+        buttonLeft + width,
+        buttonTop + radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop + height,
+        buttonLeft + width - radius,
+        buttonTop + height,
+        radius
+      );
+      ctx.lineTo(buttonLeft + radius, buttonTop + height);
+      ctx.arcTo(
+        buttonLeft,
+        buttonTop + height,
+        buttonLeft,
+        buttonTop + height - radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft, buttonTop + radius);
+      ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Button text
+      this.renderText(ctx, text, x, y, {
+        fontSize: this.layoutCache.smallFontSize,
+        align: "center",
+        baseline: "middle",
+        color: "rgba(255, 255, 255, 0.9)",
+        weight: "bold",
+      });
+    }
 
     ctx.restore();
   }
@@ -962,7 +1131,7 @@ class ThrowingScreen extends Screen {
     // Simple color lightening - increase opacity or brightness
     return color.replace(/[\d.]+\)$/, (match) => {
       const opacity = parseFloat(match);
-      return (Math.min(opacity + 0.1, 1.0)) + ")";
+      return Math.min(opacity + 0.1, 1.0) + ")";
     });
   }
 

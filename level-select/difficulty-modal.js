@@ -50,7 +50,13 @@ class DifficultyModal {
     this.buttons = [];
 
     // Validate currentDifficulty to prevent invalid loop bounds
-    const maxDifficulty = Math.max(0, Math.min(this.game.currentDifficulty || 0, GameConfig.MAX_DIFFICULTY || 10));
+    const maxDifficulty = Math.max(
+      0,
+      Math.min(
+        this.game.currentDifficulty || 0,
+        GameConfig.MAX_DIFFICULTY || 10
+      )
+    );
 
     for (let i = 0; i <= maxDifficulty; i++) {
       this.buttons.push({
@@ -179,7 +185,12 @@ class DifficultyModal {
     ctx.translate(-canvasWidth / 2, -canvasHeight / 2);
 
     // Modal panel
-    const gradient = ctx.createLinearGradient(modalX, modalY, modalX + modalWidth, modalY + modalHeight);
+    const gradient = ctx.createLinearGradient(
+      modalX,
+      modalY,
+      modalX + modalWidth,
+      modalY + modalHeight
+    );
     gradient.addColorStop(0, "rgba(30, 30, 60, 0.95)");
     gradient.addColorStop(1, "rgba(20, 20, 40, 0.95)");
     ctx.fillStyle = gradient;
@@ -202,19 +213,27 @@ class DifficultyModal {
     ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
     ctx.shadowBlur = this.game.getScaledValue(5);
     ctx.fillStyle = "#FFD700";
-    ctx.font = `bold ${this.game.getScaledValue(36)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(36)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText("SELECT DIFFICULTY", canvasWidth / 2, modalY + this.game.getScaledValue(30));
+    ctx.fillText(
+      "SELECT DIFFICULTY",
+      canvasWidth / 2,
+      modalY + this.game.getScaledValue(30)
+    );
     ctx.restore();
 
     // Level info
     const levelNum = this.selectedLevel + 1;
     ctx.save();
     ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-    ctx.font = `${this.game.getScaledValue(20)}px Courier New`;
+    ctx.font = `${this.game.getScaledValue(20)}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillText(`Level ${levelNum}`, canvasWidth / 2, modalY + this.game.getScaledValue(80));
+    ctx.fillText(
+      `Level ${levelNum}`,
+      canvasWidth / 2,
+      modalY + this.game.getScaledValue(80)
+    );
     ctx.restore();
 
     // Difficulty buttons
@@ -225,9 +244,13 @@ class DifficultyModal {
     // Instructions
     ctx.save();
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.font = `${this.game.getScaledValue(14)}px Courier New`;
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
     ctx.textAlign = "center";
-    ctx.fillText("Click outside to cancel", canvasWidth / 2, modalY + modalHeight - this.game.getScaledValue(30));
+    ctx.fillText(
+      "Click outside to cancel",
+      canvasWidth / 2,
+      modalY + modalHeight - this.game.getScaledValue(30)
+    );
     ctx.restore();
 
     ctx.restore();
@@ -239,13 +262,21 @@ class DifficultyModal {
   renderButton(ctx, button) {
     const difficultyMode = GameConfig.getDifficultyMode(button.difficulty);
     const isHovered = this.hoveredDifficulty === button.difficulty;
-    const isCompleted = this.game.completedLevelsByDifficulty[button.difficulty] &&
-                       this.game.completedLevelsByDifficulty[button.difficulty][this.selectedLevel];
+    const isCompleted =
+      this.game.completedLevelsByDifficulty[button.difficulty] &&
+      this.game.completedLevelsByDifficulty[button.difficulty][
+        this.selectedLevel
+      ];
 
     ctx.save();
 
     // Button background
-    const gradient = ctx.createLinearGradient(button.x, button.y, button.x + button.width, button.y + button.height);
+    const gradient = ctx.createLinearGradient(
+      button.x,
+      button.y,
+      button.x + button.width,
+      button.y + button.height
+    );
     if (isHovered) {
       gradient.addColorStop(0, "rgba(100, 150, 255, 0.4)");
       gradient.addColorStop(1, "rgba(75, 125, 230, 0.4)");
@@ -274,21 +305,33 @@ class DifficultyModal {
     // Difficulty name with stars
     ctx.shadowBlur = 0;
     ctx.fillStyle = isCompleted ? "#FFD700" : "#FFFFFF";
-    ctx.font = `bold ${this.game.getScaledValue(24)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(24)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(difficultyMode.name, button.x + button.width / 2, button.y + this.game.getScaledValue(20));
+    ctx.fillText(
+      difficultyMode.name,
+      button.x + button.width / 2,
+      button.y + this.game.getScaledValue(20)
+    );
 
     // Difficulty description
     ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-    ctx.font = `${this.game.getScaledValue(14)}px Courier New`;
-    ctx.fillText(difficultyMode.description, button.x + button.width / 2, button.y + this.game.getScaledValue(45));
+    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
+    ctx.fillText(
+      difficultyMode.description,
+      button.x + button.width / 2,
+      button.y + this.game.getScaledValue(45)
+    );
 
     // Completion checkmark
     if (isCompleted) {
       ctx.fillStyle = "#FFD700";
-      ctx.font = `${this.game.getScaledValue(20)}px Courier New`;
-      ctx.fillText("✓", button.x + this.game.getScaledValue(30), button.y + button.height / 2);
+      ctx.font = `${this.game.getScaledValue(20)}px Arial`;
+      ctx.fillText(
+        "✓",
+        button.x + this.game.getScaledValue(30),
+        button.y + button.height / 2
+      );
     }
 
     ctx.restore();

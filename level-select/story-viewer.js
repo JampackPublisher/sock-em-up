@@ -21,17 +21,52 @@ class StoryViewer {
       hovered: false,
       hoverProgress: 0,
     };
+
+    // Navigation buttons hover states
+    this.navButtons = {
+      close: { hovered: false },
+      previous: { hovered: false },
+      next: { hovered: false },
+    };
+
+    // Spritesheet animation state
+    this.currentFrame = 0;
+    this.frameTimer = 0;
+
+    // Pulse animation for unviewed panels
+    this.pulseTimer = 0;
   }
 
   /**
    * Open the story viewer modal
    */
   open() {
-    const unlockedCount = this.game.unlockedStoryPanels.filter(u => u).length;
+    const unlockedCount = this.game.unlockedStoryPanels.filter((u) => u).length;
     if (unlockedCount === 0) return;
 
     this.isOpen = true;
-    this.currentPanel = 0;
+
+    // Find the earliest unviewed panel
+    const unlockedPanels = this.getUnlockedPanels();
+    let earliestUnviewed = 0;
+    for (let i = 0; i < unlockedPanels.length; i++) {
+      const panelIndex = unlockedPanels[i];
+      if (!this.game.viewedStoryPanels[panelIndex]) {
+        earliestUnviewed = i;
+        break;
+      }
+    }
+
+    this.currentPanel = earliestUnviewed;
+
+    // Mark the current panel as viewed
+    if (unlockedPanels.length > 0) {
+      const panelIndex = unlockedPanels[this.currentPanel];
+      this.game.viewedStoryPanels[panelIndex] = true;
+      this.game.saveGameData();
+    }
+
+    this.resetSpriteAnimation();
     this.game.audioManager.playSound("button-click", false, 0.5);
   }
 
@@ -50,6 +85,13 @@ class StoryViewer {
     const unlockedPanels = this.getUnlockedPanels();
     if (this.currentPanel < unlockedPanels.length - 1) {
       this.currentPanel++;
+
+      // Mark the new panel as viewed
+      const panelIndex = unlockedPanels[this.currentPanel];
+      this.game.viewedStoryPanels[panelIndex] = true;
+      this.game.saveGameData();
+
+      this.resetSpriteAnimation();
       this.game.audioManager.playSound("button-click", false, 0.5);
     }
   }
@@ -60,8 +102,24 @@ class StoryViewer {
   previousPanel() {
     if (this.currentPanel > 0) {
       this.currentPanel--;
+
+      // Mark the new panel as viewed
+      const unlockedPanels = this.getUnlockedPanels();
+      const panelIndex = unlockedPanels[this.currentPanel];
+      this.game.viewedStoryPanels[panelIndex] = true;
+      this.game.saveGameData();
+
+      this.resetSpriteAnimation();
       this.game.audioManager.playSound("button-click", false, 0.5);
     }
+  }
+
+  /**
+   * Reset spritesheet animation
+   */
+  resetSpriteAnimation() {
+    this.currentFrame = 0;
+    this.frameTimer = 0;
   }
 
   /**
@@ -78,10 +136,22 @@ class StoryViewer {
   }
 
   /**
+   * Check if there are any unlocked but unviewed panels
+   */
+  hasUnviewedPanels() {
+    for (let i = 0; i < this.game.unlockedStoryPanels.length; i++) {
+      if (this.game.unlockedStoryPanels[i] && !this.game.viewedStoryPanels[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Update button hover state
    */
   updateButtonHover(x, y, layout) {
-    const unlockedCount = this.game.unlockedStoryPanels.filter(u => u).length;
+    const unlockedCount = this.game.unlockedStoryPanels.filter((u) => u).length;
     const isDisabled = unlockedCount === 0;
 
     // Don't allow hover on disabled button
@@ -90,8 +160,10 @@ class StoryViewer {
       return;
     }
 
-    const buttonX = layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2;
-    const buttonY = layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2;
+    const buttonX =
+      layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2;
+    const buttonY =
+      layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2;
 
     this.button.hovered = this.ui.isPointInRect(x, y, {
       x: buttonX,
@@ -105,6 +177,9 @@ class StoryViewer {
    * Update animations
    */
   update(deltaTime) {
+    // Update pulse animation timer (for unviewed panels indicator)
+    this.pulseTimer += deltaTime;
+
     // Update button hover animation
     const buttonAnimSpeed = 0.008;
     const target = this.button.hovered ? 1 : 0;
@@ -119,6 +194,26 @@ class StoryViewer {
         this.button.hoverProgress - buttonAnimSpeed * deltaTime,
         target
       );
+    }
+
+    // Update spritesheet animation if current panel has a spritesheet
+    if (this.isOpen) {
+      const unlockedPanels = this.getUnlockedPanels();
+      const panelIndex = unlockedPanels[this.currentPanel];
+      const panel = GameConfig.STORY_PANELS[panelIndex];
+      if (panel && panel.spritesheet) {
+        const spritesheetConfig = GameConfig[panel.spritesheet];
+        if (spritesheetConfig) {
+          const msPerFrame = 1000 / spritesheetConfig.fps;
+          this.frameTimer += deltaTime;
+
+          if (this.frameTimer >= msPerFrame) {
+            this.currentFrame =
+              (this.currentFrame + 1) % spritesheetConfig.animationFrames.length;
+            this.frameTimer = 0;
+          }
+        }
+      }
     }
   }
 
@@ -142,13 +237,72 @@ class StoryViewer {
       return true;
     }
 
-    if (e.key === "ArrowRight" && this.currentPanel < unlockedPanels.length - 1) {
+    if (
+      e.key === "ArrowRight" &&
+      this.currentPanel < unlockedPanels.length - 1
+    ) {
       this.nextPanel();
       e.preventDefault();
       return true;
     }
 
     return true; // Consume event if modal is open
+  }
+
+  /**
+   * Handle mouse movement for hover detection
+   */
+  handleMouseMove(x, y) {
+    if (!this.isOpen) return false;
+
+    const canvasWidth = this.game.getCanvasWidth();
+    const canvasHeight = this.game.getCanvasHeight();
+    const modalWidth = this.game.getScaledValue(900);
+    const modalHeight = this.game.getScaledValue(480);
+    const modalX = (canvasWidth - modalWidth) / 2;
+    const modalY = (canvasHeight - modalHeight) / 2;
+    const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
+    const buttonWidth = this.game.getScaledValue(85);
+    const buttonHeight = this.game.getScaledValue(35);
+    const buttonSpacing = this.game.getScaledValue(15);
+
+    const unlockedPanels = this.getUnlockedPanels();
+
+    // Check close button hover
+    this.navButtons.close.hovered = this.ui.isPointInRect(x, y, {
+      x: modalX + this.game.getScaledValue(30),
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight,
+    });
+
+    // Check previous button hover
+    if (this.currentPanel > 0) {
+      const prevX = modalX + modalWidth - buttonWidth * 2 - buttonSpacing - this.game.getScaledValue(30);
+      this.navButtons.previous.hovered = this.ui.isPointInRect(x, y, {
+        x: prevX,
+        y: buttonY,
+        width: buttonWidth,
+        height: buttonHeight,
+      });
+    } else {
+      this.navButtons.previous.hovered = false;
+    }
+
+    // Check next button hover
+    if (this.currentPanel < unlockedPanels.length - 1) {
+      const nextX = modalX + modalWidth - buttonWidth - this.game.getScaledValue(30);
+      this.navButtons.next.hovered = this.ui.isPointInRect(x, y, {
+        x: nextX,
+        y: buttonY,
+        width: buttonWidth,
+        height: buttonHeight,
+      });
+    } else {
+      this.navButtons.next.hovered = false;
+    }
+
+    return true;
   }
 
   /**
@@ -159,8 +313,8 @@ class StoryViewer {
 
     const canvasWidth = this.game.getCanvasWidth();
     const canvasHeight = this.game.getCanvasHeight();
-    const modalWidth = this.game.getScaledValue(700);
-    const modalHeight = this.game.getScaledValue(480); // Reduced from 600 by 20%
+    const modalWidth = this.game.getScaledValue(900);
+    const modalHeight = this.game.getScaledValue(480);
     const modalX = (canvasWidth - modalWidth) / 2;
     const modalY = (canvasHeight - modalHeight) / 2;
     const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
@@ -171,39 +325,45 @@ class StoryViewer {
     const unlockedPanels = this.getUnlockedPanels();
 
     // Check close button (far left)
-    if (this.ui.isPointInRect(x, y, {
-      x: modalX + this.game.getScaledValue(30),
-      y: buttonY,
-      width: buttonWidth,
-      height: buttonHeight
-    })) {
+    if (
+      this.ui.isPointInRect(x, y, {
+        x: modalX + this.game.getScaledValue(30),
+        y: buttonY,
+        width: buttonWidth,
+        height: buttonHeight,
+      })
+    ) {
       this.close();
       return true;
     }
 
-    // Check previous button (left of center)
+    // Check previous button (right side, first button)
     if (this.currentPanel > 0) {
-      const prevX = canvasWidth / 2 - buttonWidth - buttonSpacing / 2;
-      if (this.ui.isPointInRect(x, y, {
-        x: prevX,
-        y: buttonY,
-        width: buttonWidth,
-        height: buttonHeight
-      })) {
+      const prevX = modalX + modalWidth - buttonWidth * 2 - buttonSpacing - this.game.getScaledValue(30);
+      if (
+        this.ui.isPointInRect(x, y, {
+          x: prevX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight,
+        })
+      ) {
         this.previousPanel();
         return true;
       }
     }
 
-    // Check next button (right of center)
+    // Check next button (right side, second button)
     if (this.currentPanel < unlockedPanels.length - 1) {
-      const nextX = canvasWidth / 2 + buttonSpacing / 2;
-      if (this.ui.isPointInRect(x, y, {
-        x: nextX,
-        y: buttonY,
-        width: buttonWidth,
-        height: buttonHeight
-      })) {
+      const nextX = modalX + modalWidth - buttonWidth - this.game.getScaledValue(30);
+      if (
+        this.ui.isPointInRect(x, y, {
+          x: nextX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight,
+        })
+      ) {
         this.nextPanel();
         return true;
       }
@@ -216,7 +376,7 @@ class StoryViewer {
    * Render the story viewer button
    */
   renderButton(ctx, layout) {
-    const unlockedCount = this.game.unlockedStoryPanels.filter(u => u).length;
+    const unlockedCount = this.game.unlockedStoryPanels.filter((u) => u).length;
     const isDisabled = unlockedCount === 0;
 
     ctx.save();
@@ -257,7 +417,14 @@ class StoryViewer {
       : "rgba(150, 100, 237, 0.6)";
     ctx.lineWidth = this.game.getScaledValue(3);
 
-    this.ui.drawRoundedRect(ctx, x, y, layout.storyViewerButtonWidth, layout.storyViewerButtonHeight, radius);
+    this.ui.drawRoundedRect(
+      ctx,
+      x,
+      y,
+      layout.storyViewerButtonWidth,
+      layout.storyViewerButtonHeight,
+      radius
+    );
     ctx.fill();
     ctx.stroke();
 
@@ -293,50 +460,74 @@ class StoryViewer {
     ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    // Modal dimensions
-    const modalWidth = this.game.getScaledValue(700);
-    const modalHeight = this.game.getScaledValue(480); // Reduced from 600 by 20%
+    // Modal dimensions - match How to Play
+    const modalWidth = this.game.getScaledValue(900);
+    const modalHeight = this.game.getScaledValue(480);
     const modalX = (canvasWidth - modalWidth) / 2;
     const modalY = (canvasHeight - modalHeight) / 2;
-    const radius = this.game.getScaledValue(12);
+    const radius = this.game.getScaledValue(20);
 
-    // Modal background
+    // Modal background - match How to Play style
+    ctx.save();
+    ctx.shadowColor = "rgba(100, 150, 255, 0.3)";
+    ctx.shadowBlur = this.game.getScaledValue(30);
+
     const bgGradient = ctx.createLinearGradient(
       modalX,
       modalY,
       modalX,
       modalY + modalHeight
     );
-    bgGradient.addColorStop(0, "rgba(30, 20, 45, 0.98)");
-    bgGradient.addColorStop(1, "rgba(20, 15, 35, 0.98)");
+    bgGradient.addColorStop(0, "rgba(40, 40, 80, 0.98)");
+    bgGradient.addColorStop(0.5, "rgba(30, 30, 60, 0.98)");
+    bgGradient.addColorStop(1, "rgba(20, 20, 50, 0.98)");
     ctx.fillStyle = bgGradient;
-    this.ui.drawRoundedRect(ctx, modalX, modalY, modalWidth, modalHeight, radius);
+    this.ui.drawRoundedRect(
+      ctx,
+      modalX,
+      modalY,
+      modalWidth,
+      modalHeight,
+      radius
+    );
     ctx.fill();
 
-    // Modal border
-    ctx.strokeStyle = "rgba(180, 100, 255, 0.6)";
-    ctx.lineWidth = this.game.getScaledValue(3);
-    ctx.shadowColor = "rgba(180, 100, 255, 0.4)";
-    ctx.shadowBlur = this.game.getScaledValue(15);
-    this.ui.drawRoundedRect(ctx, modalX, modalY, modalWidth, modalHeight, radius);
+    // Simple border with glow
+    ctx.strokeStyle = "rgba(120, 170, 255, 0.7)";
+    ctx.lineWidth = this.game.getScaledValue(4);
+    this.ui.drawRoundedRect(
+      ctx,
+      modalX,
+      modalY,
+      modalWidth,
+      modalHeight,
+      radius
+    );
     ctx.stroke();
 
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
+    ctx.restore();
 
-    // Title
-    this.ui.renderText(
-      ctx,
-      "📚 Story Panels",
-      canvasWidth / 2,
-      modalY + this.game.getScaledValue(30),
-      {
-        fontSize: layout.headerFontSize,
-        color: "#BA55D3",
-        weight: "bold",
-        align: "center",
-      }
+    // Inner highlight
+    ctx.save();
+    const highlightGradient = ctx.createLinearGradient(
+      modalX,
+      modalY,
+      modalX,
+      modalY + modalHeight * 0.3
     );
+    highlightGradient.addColorStop(0, "rgba(255, 255, 255, 0.1)");
+    highlightGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = highlightGradient;
+    this.ui.drawRoundedRect(
+      ctx,
+      modalX + 2,
+      modalY + 2,
+      modalWidth - 4,
+      modalHeight * 0.3,
+      this.game.getScaledValue(18)
+    );
+    ctx.fill();
+    ctx.restore();
 
     const unlockedPanels = this.getUnlockedPanels();
 
@@ -365,10 +556,26 @@ class StoryViewer {
     const panel = GameConfig.STORY_PANELS[panelIndex];
 
     // Render panel content
-    this.renderPanelContent(ctx, layout, panel, modalX, modalY, modalWidth, modalHeight);
+    this.renderPanelContent(
+      ctx,
+      layout,
+      panel,
+      panelIndex,
+      modalX,
+      modalY,
+      modalWidth,
+      modalHeight
+    );
 
     // Render navigation buttons
-    this.renderNavigationButtons(ctx, modalX, modalY, modalWidth, modalHeight, unlockedPanels.length);
+    this.renderNavigationButtons(
+      ctx,
+      modalX,
+      modalY,
+      modalWidth,
+      modalHeight,
+      unlockedPanels.length
+    );
 
     ctx.restore();
   }
@@ -376,14 +583,152 @@ class StoryViewer {
   /**
    * Render the content of the current panel
    */
-  renderPanelContent(ctx, layout, panel, modalX, modalY, modalWidth, modalHeight) {
+  renderPanelContent(
+    ctx,
+    layout,
+    panel,
+    panelIndex,
+    modalX,
+    modalY,
+    modalWidth,
+    modalHeight
+  ) {
     const canvasWidth = this.game.getCanvasWidth();
 
-    // Panel image
-    const maxImageSize = this.game.getScaledValue(120);
-    const imageY = modalY + this.game.getScaledValue(80);
+    // Full-width semi-transparent black title bar with rounded top corners
+    ctx.save();
+    const titleBarHeight = this.game.getScaledValue(55);
+    const cornerRadius = this.game.getScaledValue(20);
 
-    if (panel.image && this.game.images[panel.image]) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+
+    // Draw rounded rectangle for title bar (only top corners rounded)
+    ctx.beginPath();
+    ctx.moveTo(modalX + cornerRadius, modalY);
+    ctx.lineTo(modalX + modalWidth - cornerRadius, modalY);
+    ctx.quadraticCurveTo(modalX + modalWidth, modalY, modalX + modalWidth, modalY + cornerRadius);
+    ctx.lineTo(modalX + modalWidth, modalY + titleBarHeight);
+    ctx.lineTo(modalX, modalY + titleBarHeight);
+    ctx.lineTo(modalX, modalY + cornerRadius);
+    ctx.quadraticCurveTo(modalX, modalY, modalX + cornerRadius, modalY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Title text with glow
+    ctx.shadowColor = "rgba(255, 215, 0, 0.6)";
+    ctx.shadowBlur = this.game.getScaledValue(15);
+    ctx.fillStyle = "#FFD700";
+    ctx.font = `bold ${this.game.getScaledValue(36)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(panel.title, modalX + modalWidth / 2, modalY + titleBarHeight / 2);
+    ctx.restore();
+
+    // Side-by-side layout: Image on left, text on right
+    const mainContentY = modalY + this.game.getScaledValue(70);
+    const leftPanelWidth = modalWidth * 0.42;
+    const rightPanelWidth = modalWidth * 0.52;
+    const leftPanelX = modalX + this.game.getScaledValue(30);
+    const rightPanelX = leftPanelX + leftPanelWidth + this.game.getScaledValue(25);
+
+    // Left panel - Image with container
+    ctx.save();
+
+    // Image container background with subtle gradient
+    const imageContainerHeight = this.game.getScaledValue(280);
+    const frameGradient = ctx.createRadialGradient(
+      leftPanelX + leftPanelWidth / 2,
+      mainContentY + imageContainerHeight / 2,
+      this.game.getScaledValue(50),
+      leftPanelX + leftPanelWidth / 2,
+      mainContentY + imageContainerHeight / 2,
+      this.game.getScaledValue(180)
+    );
+    frameGradient.addColorStop(0, "rgba(60, 40, 100, 0.3)");
+    frameGradient.addColorStop(1, "rgba(40, 25, 80, 0.15)");
+    ctx.fillStyle = frameGradient;
+    this.ui.drawRoundedRect(
+      ctx,
+      leftPanelX,
+      mainContentY,
+      leftPanelWidth,
+      imageContainerHeight,
+      this.game.getScaledValue(15)
+    );
+    ctx.fill();
+
+    // Container border
+    ctx.strokeStyle = "rgba(120, 170, 255, 0.4)";
+    ctx.lineWidth = this.game.getScaledValue(2);
+    this.ui.drawRoundedRect(
+      ctx,
+      leftPanelX,
+      mainContentY,
+      leftPanelWidth,
+      imageContainerHeight,
+      this.game.getScaledValue(15)
+    );
+    ctx.stroke();
+
+    // Panel image
+    const maxImageSize = this.game.getScaledValue(280);
+    let actualImageHeight = maxImageSize; // Track actual rendered height
+
+    // Check if this panel uses a spritesheet
+    if (panel.spritesheet) {
+      const spritesheetConfig = GameConfig[panel.spritesheet];
+      const spritesheetImage = this.game.images[spritesheetConfig.filename];
+
+      if (spritesheetImage && spritesheetConfig) {
+        // Calculate aspect ratio from frame dimensions
+        const aspectRatio =
+          spritesheetConfig.frameWidth / spritesheetConfig.frameHeight;
+        let imageWidth, imageHeight;
+
+        if (aspectRatio > 1) {
+          // Landscape - constrain width
+          imageWidth = maxImageSize;
+          imageHeight = maxImageSize / aspectRatio;
+        } else {
+          // Portrait or square - constrain height
+          imageHeight = maxImageSize;
+          imageWidth = maxImageSize * aspectRatio;
+        }
+
+        actualImageHeight = imageHeight; // Store actual height
+        const imageX = leftPanelX + leftPanelWidth / 2 - imageWidth / 2;
+        const imageY = mainContentY + imageContainerHeight / 2 - imageHeight / 2;
+
+        // Get current frame from animation sequence
+        const frameIndex =
+          spritesheetConfig.animationFrames[this.currentFrame];
+        const frameX =
+          (frameIndex % spritesheetConfig.columns) *
+          spritesheetConfig.frameWidth;
+        const frameY =
+          Math.floor(frameIndex / spritesheetConfig.columns) *
+          spritesheetConfig.frameHeight;
+
+        ctx.save();
+        ctx.shadowColor = "rgba(180, 100, 255, 0.3)";
+        ctx.shadowBlur = this.game.getScaledValue(10);
+
+        // Draw the current frame from the spritesheet
+        ctx.drawImage(
+          spritesheetImage,
+          frameX,
+          frameY,
+          spritesheetConfig.frameWidth,
+          spritesheetConfig.frameHeight,
+          imageX,
+          imageY,
+          imageWidth,
+          imageHeight
+        );
+        ctx.restore();
+      }
+    } else if (panel.image && this.game.images[panel.image]) {
+      // Static image fallback
       const image = this.game.images[panel.image];
 
       // Calculate aspect ratio preserving dimensions
@@ -400,86 +745,71 @@ class StoryViewer {
         imageWidth = maxImageSize * aspectRatio;
       }
 
-      const imageX = canvasWidth / 2 - imageWidth / 2;
+      actualImageHeight = imageHeight; // Store actual height
+      const imageX = leftPanelX + leftPanelWidth / 2 - imageWidth / 2;
+      const imageY = mainContentY + imageContainerHeight / 2 - imageHeight / 2;
 
       ctx.save();
-      ctx.shadowColor = "rgba(180, 100, 255, 0.3)";
-      ctx.shadowBlur = this.game.getScaledValue(10);
-      ctx.drawImage(
-        image,
-        imageX,
-        imageY,
-        imageWidth,
-        imageHeight
-      );
+      ctx.shadowColor = "rgba(255, 100, 200, 0.4)";
+      ctx.shadowBlur = this.game.getScaledValue(20);
+      ctx.shadowOffsetY = this.game.getScaledValue(8);
+      ctx.drawImage(image, imageX, imageY, imageWidth, imageHeight);
       ctx.restore();
     }
 
-    // Panel title
-    const titleY = imageY + maxImageSize + this.game.getScaledValue(20);
-    this.ui.renderText(
-      ctx,
-      panel.title,
-      canvasWidth / 2,
-      titleY,
-      {
-        fontSize: this.game.getScaledValue(20),
-        color: "#FFD700",
-        weight: "bold",
-        align: "center",
-      }
-    );
+    ctx.restore();
 
-    // Panel text (word-wrapped)
-    const textY = titleY + this.game.getScaledValue(35);
-    const textMaxWidth = modalWidth - this.game.getScaledValue(100);
-    const lineHeight = this.game.getScaledValue(20);
+    // Right panel - Text content (no box, just the text)
+    ctx.save();
 
-    const lines = this.ui.wrapText(ctx, panel.text, textMaxWidth, layout.bodyFontSize);
-
-    ctx.font = `${layout.bodyFontSize}px Courier New`;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.textAlign = "center";
+    // Main text content - positioned to align nicely with image
+    const textStartY = mainContentY + this.game.getScaledValue(85);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.font = `${this.game.getScaledValue(20)}px Arial`;
+    ctx.textAlign = "left";
     ctx.textBaseline = "top";
+
+    // Word wrap text with better line height
+    const lineHeight = this.game.getScaledValue(28);
+    const lines = this.ui.wrapText(
+      ctx,
+      panel.text,
+      rightPanelWidth,
+      this.game.getScaledValue(20)
+    );
 
     // Limit lines to prevent overlap
     const maxLines = 8;
     const displayLines = lines.slice(0, maxLines);
 
     displayLines.forEach((line, index) => {
-      ctx.fillText(line, canvasWidth / 2, textY + index * lineHeight);
+      ctx.fillText(line, rightPanelX, textStartY + index * lineHeight);
     });
 
     // Add ellipsis if text was truncated
     if (lines.length > maxLines) {
-      ctx.fillText("...", canvasWidth / 2, textY + maxLines * lineHeight);
+      ctx.fillText("...", rightPanelX, textStartY + maxLines * lineHeight);
     }
+
+    ctx.restore();
   }
 
   /**
    * Render navigation buttons
    */
-  renderNavigationButtons(ctx, modalX, modalY, modalWidth, modalHeight, totalPanels) {
+  renderNavigationButtons(
+    ctx,
+    modalX,
+    modalY,
+    modalWidth,
+    modalHeight,
+    totalPanels
+  ) {
     const canvasWidth = this.game.getCanvasWidth();
     const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
     const buttonWidth = this.game.getScaledValue(85);
     const buttonHeight = this.game.getScaledValue(35);
     const buttonSpacing = this.game.getScaledValue(15);
-
-    // Unlock progress message - above the buttons
-    const totalStoryPanels = this.game.unlockedStoryPanels.length;
-    const unlockedCount = this.getUnlockedPanels().length;
-    this.ui.renderText(
-      ctx,
-      `Unlock the full story by beating every level (${unlockedCount}/${totalStoryPanels})`,
-      canvasWidth / 2,
-      buttonY - this.game.getScaledValue(25),
-      {
-        fontSize: this.game.getScaledValue(12),
-        color: unlockedCount === totalStoryPanels ? "rgba(255, 215, 0, 0.9)" : "rgba(180, 100, 255, 0.7)",
-        align: "center",
-      }
-    );
 
     // Close button - far left
     this.renderNavigationButton(
@@ -489,31 +819,50 @@ class StoryViewer {
       buttonWidth,
       buttonHeight,
       "Close",
-      true
+      true,
+      this.navButtons.close.hovered
     );
 
-    // Previous button - left of center
+    // Previous button - right side, first button
     if (this.currentPanel > 0) {
-      const prevX = canvasWidth / 2 - buttonWidth - buttonSpacing / 2;
-      this.renderNavigationButton(ctx, prevX, buttonY, buttonWidth, buttonHeight, "Previous", false);
+      const prevX = modalX + modalWidth - buttonWidth * 2 - buttonSpacing - this.game.getScaledValue(30);
+      this.renderNavigationButton(
+        ctx,
+        prevX,
+        buttonY,
+        buttonWidth,
+        buttonHeight,
+        "Previous",
+        false,
+        this.navButtons.previous.hovered
+      );
     }
 
-    // Next button - right of center
+    // Next button - right side, second button
     if (this.currentPanel < totalPanels - 1) {
-      const nextX = canvasWidth / 2 + buttonSpacing / 2;
-      this.renderNavigationButton(ctx, nextX, buttonY, buttonWidth, buttonHeight, "Next", false);
+      const nextX = modalX + modalWidth - buttonWidth - this.game.getScaledValue(30);
+      this.renderNavigationButton(
+        ctx,
+        nextX,
+        buttonY,
+        buttonWidth,
+        buttonHeight,
+        "Next",
+        false,
+        this.navButtons.next.hovered
+      );
     }
 
-    // Page counter - far right
+    // Centered page counter
     ctx.save();
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.font = `${this.game.getScaledValue(14)}px Arial`;
-    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.font = `${this.game.getScaledValue(16)}px Arial`;
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(
       `${this.currentPanel + 1} / ${totalPanels}`,
-      modalX + modalWidth - this.game.getScaledValue(30),
-      buttonY + buttonHeight / 2
+      modalX + modalWidth / 2,
+      modalY + modalHeight - this.game.getScaledValue(32)
     );
     ctx.restore();
   }
@@ -521,36 +870,53 @@ class StoryViewer {
   /**
    * Render a single navigation button
    */
-  renderNavigationButton(ctx, x, y, width, height, text, isClose) {
-    const radius = this.game.getScaledValue(8);
-
+  renderNavigationButton(ctx, x, y, width, height, text, isClose, hovered = false) {
     ctx.save();
 
-    const gradient = ctx.createLinearGradient(x, y, x, y + height);
+    // Determine which button image to use
+    let buttonImage = null;
     if (isClose) {
-      gradient.addColorStop(0, "rgba(136, 136, 136, 0.8)");
-      gradient.addColorStop(1, "rgba(100, 100, 100, 0.8)");
-    } else {
-      gradient.addColorStop(0, "rgba(74, 144, 226, 0.8)");
-      gradient.addColorStop(1, "rgba(52, 101, 158, 0.8)");
+      buttonImage = this.game.images["btn-exit.png"];
+    } else if (text === "Next") {
+      buttonImage = this.game.images["btn-next.png"];
+    } else if (text === "Previous") {
+      buttonImage = this.game.images["btn-back.png"];
     }
-    ctx.fillStyle = gradient;
-    this.ui.drawRoundedRect(ctx, x, y, width, height, radius);
-    ctx.fill();
 
-    ctx.strokeStyle = isClose ? "rgba(255, 255, 255, 0.5)" : "rgba(150, 200, 255, 0.6)";
-    ctx.lineWidth = this.game.getScaledValue(2);
-    this.ui.drawRoundedRect(ctx, x, y, width, height, radius);
-    ctx.stroke();
+    // If we have a button image, use it
+    if (buttonImage) {
+      // Calculate dimensions to fit the button while maintaining aspect ratio
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = width;
+      let imgHeight = imgWidth / aspectRatio;
+
+      // If height is too large, scale by height instead
+      if (imgHeight > height) {
+        imgHeight = height;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = x + (width - imgWidth) / 2;
+      const imgY = y + (height - imgHeight) / 2;
+
+      // Apply hover effect - scale and add glow
+      if (hovered) {
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = x + (width - scaledWidth) / 2;
+        const scaledY = y + (height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    }
 
     ctx.restore();
-
-    this.ui.renderText(ctx, text, x + width / 2, y + height / 2, {
-      fontSize: this.game.getScaledValue(18),
-      color: "white",
-      weight: "bold",
-      align: "center",
-      baseline: "middle",
-    });
   }
 }

@@ -59,7 +59,9 @@ class MatchScreen extends Screen {
     const barHeight = this.game.getScaledValue(GameConfig.UI_BAR.height);
     const barY = 0; // Top of screen
     const barPadding = this.game.getScaledValue(GameConfig.UI_BAR.padding);
-    const panelSpacing = this.game.getScaledValue(GameConfig.UI_BAR.panelSpacing);
+    const panelSpacing = this.game.getScaledValue(
+      GameConfig.UI_BAR.panelSpacing
+    );
 
     return {
       ...baseLayout,
@@ -72,11 +74,11 @@ class MatchScreen extends Screen {
       dropZoneAreaY: canvasHeight / 3 + this.game.getScaledValue(20), // Slightly lower to avoid top bar
       pairWidth: canvasWidth / GameConfig.DROP_TARGET_PAIRS,
       sockPileX: canvasWidth / 2,
-      sockPileY: canvasHeight - this.game.getScaledValue(80), // Back to bottom
+      sockPileY: canvasHeight - this.game.getScaledValue(110), // Bumped up 30 pixels (80 + 30)
       sockPileSize: this.game.getScaledValue(120),
       // Instructions beside sock pile
       instructionArrowX: canvasWidth / 2 + this.game.getScaledValue(90),
-      instructionArrowY: canvasHeight - this.game.getScaledValue(80),
+      instructionArrowY: canvasHeight - this.game.getScaledValue(110), // Bumped up 30 pixels
 
       // Top bar layout
       barY: barY,
@@ -84,14 +86,14 @@ class MatchScreen extends Screen {
       barPadding: barPadding,
 
       // Top bar elements (left to right)
-      sockBallsX: barPadding + this.game.getScaledValue(80),
+      sockBallsX: barPadding + this.game.getScaledValue(100),
       sockBallsY: barY + barHeight / 2,
 
-      timeX: barPadding + this.game.getScaledValue(240),
-      timeY: barY + barHeight / 2,
-
-      streakX: barPadding + this.game.getScaledValue(480),
+      streakX: canvasWidth / 2,
       streakY: barY + barHeight / 2,
+
+      timeX: canvasWidth / 2 - this.game.getScaledValue(200),
+      timeY: barY + barHeight / 2,
 
       // Buttons on the right side of top bar
       pauseButtonX: canvasWidth - this.game.getScaledValue(240),
@@ -113,6 +115,7 @@ class MatchScreen extends Screen {
     this.sockManager.setSockList(this.game.sockList);
     this.setupDropZones();
     this.setupSockPilePosition();
+    this.setSockballAnimationTarget();
     this.draggedSock = null;
     this.isDragging = false;
     this.dropZoneHover = null;
@@ -151,7 +154,7 @@ class MatchScreen extends Screen {
 
     // Reset canvas transform in case shake is still active
     if (this.game.canvas) {
-      this.game.canvas.style.transform = '';
+      this.game.canvas.style.transform = "";
     }
 
     // Stop match music when leaving match screen
@@ -160,25 +163,50 @@ class MatchScreen extends Screen {
   }
 
   clearAllTimeouts() {
-    this.activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this.activeTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this.activeTimeouts = [];
   }
 
   onResize() {
     this.setupDropZones();
     this.setupSockPilePosition();
+    this.setSockballAnimationTarget();
+  }
+
+  setSockballAnimationTarget() {
+    const layout = this.layoutCache;
+    // Set the target position for sockball animations to the sockball counter icon
+    this.sockManager.sockballTargetX =
+      layout.sockBallsX - this.game.getScaledValue(25);
+    this.sockManager.sockballTargetY = layout.sockBallsY;
   }
 
   setupDropZones() {
     const layout = this.layoutCache;
+    const canvasWidth = this.game.getCanvasWidth();
+    const canvasHeight = this.game.getCanvasHeight();
     this.dropZones = [];
 
-    for (let pairId = 0; pairId < GameConfig.DROP_TARGET_PAIRS; pairId++) {
-      const pairCenterX = layout.pairWidth / 2 + pairId * layout.pairWidth;
+    // Center the zones horizontally with tighter spacing
+    const totalPairs = GameConfig.DROP_TARGET_PAIRS;
+    const horizontalSpacing = this.game.getScaledValue(180); // Closer together
+    const totalWidth = (totalPairs - 1) * horizontalSpacing;
+    const startX = (canvasWidth - totalWidth) / 2;
 
+    // Vertical positioning - pairs 1 and 3 are lower than pair 2
+    const baseY = canvasHeight / 2 - this.game.getScaledValue(80); // Nudged up by 20 pixels
+    const verticalOffset = this.game.getScaledValue(60); // How much lower 1 & 3 are
+
+    for (let pairId = 0; pairId < totalPairs; pairId++) {
+      const pairCenterX = startX + pairId * horizontalSpacing;
+
+      // Pair 2 (middle, index 1) is higher, pairs 1 and 3 (indices 0 and 2) are lower
+      const pairBaseY = pairId === 1 ? baseY : baseY + verticalOffset;
+
+      // Top zone
       this.dropZones.push({
         x: pairCenterX,
-        y: layout.dropZoneAreaY - layout.dropZoneSpacing / 2,
+        y: pairBaseY - layout.dropZoneSpacing / 2,
         width: layout.dropZoneSize,
         height: layout.dropZoneSize,
         pairId: pairId,
@@ -189,9 +217,10 @@ class MatchScreen extends Screen {
         id: pairId * 2,
       });
 
+      // Bottom zone
       this.dropZones.push({
         x: pairCenterX,
-        y: layout.dropZoneAreaY + layout.dropZoneSpacing / 2,
+        y: pairBaseY + layout.dropZoneSpacing / 2,
         width: layout.dropZoneSize,
         height: layout.dropZoneSize,
         pairId: pairId,
@@ -205,6 +234,11 @@ class MatchScreen extends Screen {
   }
 
   setupSockPilePosition() {
+    // Guard against resize before screen is set up
+    if (!this.sockManager.sockPile) {
+      return;
+    }
+
     const layout = this.layoutCache;
     const sockPile = this.sockManager.sockPile;
     sockPile.x = layout.sockPileX;
@@ -528,15 +562,17 @@ class MatchScreen extends Screen {
     if (this.draggedSock) {
       const snapDistance = this.game.getScaledValue(80);
 
-      this.dropZones.forEach((zone) => {
+      // Fix Bug #7: Find the closest zone and break after finding first match
+      for (const zone of this.dropZones) {
         const distance = this.physics.getDropZoneDistance(
           this.draggedSock,
           zone
         );
         if (distance < snapDistance) {
           this.dropZoneHover = zone.id;
+          break; // Only highlight the first matching zone
         }
-      });
+      }
     }
   }
 
@@ -627,7 +663,7 @@ class MatchScreen extends Screen {
           // Play points gained sound with slight delay
           const timeoutId = setTimeout(() => {
             // Fix Bug #4: Guard clause to prevent execution after screen cleanup
-            if (this.game.gameState !== 'matching') return;
+            if (this.game.gameState !== "matching") return;
             this.game.audioManager.playSound("points-gained", false, 0.4);
           }, 500);
           this.activeTimeouts.push(timeoutId);
@@ -662,13 +698,19 @@ class MatchScreen extends Screen {
             this.game.unlockAchievement("streak_king");
           }
 
+          // Achievement: COMBO_MASTER (10x match streak)
+          if (this.matchStreak >= 10) {
+            this.game.unlockAchievement("combo_master");
+          }
+
           // Screen shake effect
           this.createScreenShake();
 
           // Check if we've completed the required number of matches (stop timer immediately)
           // Count BOTH animated sockballs AND queued sockballs
           const level = GameConfig.LEVELS[this.game.currentLevel];
-          const totalSockballs = this.game.sockBalls + this.game.getSockballQueueLength();
+          const totalSockballs =
+            this.game.sockBalls + this.game.getSockballQueueLength();
           if (level && totalSockballs >= level.sockPairs) {
             // Mark level as completed to stop the timer
             if (!this.levelCompleted) {
@@ -682,12 +724,19 @@ class MatchScreen extends Screen {
               if (timeElapsed <= timeLimit) {
                 // Set time bonus flag - this will double rent payment points on level end screen
                 this.game.timeBonusEarned = true;
-                console.log(`⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`);
+                console.log(
+                  `⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`
+                );
               }
 
               // Achievement: SPEEDY_MATCHER (complete with 30+ seconds remaining)
               if (timeRemaining >= 30) {
                 this.game.unlockAchievement("speedy_matcher");
+              }
+
+              // Achievement: SPEED_DEMON (match all socks in under 10 seconds)
+              if (timeElapsed < 10) {
+                this.game.unlockAchievement("speed_demon");
               }
             }
           }
@@ -790,6 +839,9 @@ class MatchScreen extends Screen {
   }
 
   onUpdate(deltaTime) {
+    // Fix Bug #6: Update parent class timers
+    this.updateAnimationTimers(deltaTime);
+
     // Update pulse timer for sock pile animation
     if (!this.sockPileClicked) {
       this.pulseTimer += deltaTime * 0.005; // Slow pulse
@@ -839,7 +891,9 @@ class MatchScreen extends Screen {
       if (timeElapsed <= timeLimit) {
         // Set time bonus flag - this will double rent payment points on level end screen
         this.game.timeBonusEarned = true;
-        console.log(`⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`);
+        console.log(
+          `⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`
+        );
       }
 
       // Achievement: SPEEDY_MATCHER (complete with 30+ seconds remaining)
@@ -878,9 +932,28 @@ class MatchScreen extends Screen {
 
   renderDropZonePairBoxes(ctx) {
     const layout = this.layoutCache;
-    const lineWidth = this.game.getScaledValue(2);
-    const dashLength = this.game.getScaledValue(5);
+    const lineWidth = this.game.getScaledValue(3);
     const margin = this.game.getScaledValue(50);
+    const cornerRadius = this.game.getScaledValue(10); // Reduced from 15 to 10
+
+    // Color themes for each pair (soft, pastel colors)
+    const pairColors = [
+      {
+        bg: "rgba(255, 182, 193, 0.15)",
+        border: "rgba(255, 105, 180, 0.5)",
+        name: "rgba(255, 105, 180, 0.9)",
+      }, // Soft pink
+      {
+        bg: "rgba(173, 216, 230, 0.15)",
+        border: "rgba(100, 149, 237, 0.5)",
+        name: "rgba(100, 149, 237, 0.9)",
+      }, // Soft blue
+      {
+        bg: "rgba(144, 238, 144, 0.15)",
+        border: "rgba(46, 204, 113, 0.5)",
+        name: "rgba(46, 204, 113, 0.9)",
+      }, // Soft green
+    ];
 
     for (let pairId = 0; pairId < GameConfig.DROP_TARGET_PAIRS; pairId++) {
       const pairZones = this.dropZones.filter((zone) => zone.pairId === pairId);
@@ -891,20 +964,73 @@ class MatchScreen extends Screen {
         const minY = Math.min(pairZones[0].y, pairZones[1].y) - margin;
         const maxY = Math.max(pairZones[0].y, pairZones[1].y) + margin;
 
-        ctx.save();
-        ctx.strokeStyle = "rgba(200, 200, 200, 0.5)";
-        ctx.lineWidth = lineWidth;
-        ctx.setLineDash([dashLength, dashLength]);
-        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const centerX = (minX + maxX) / 2;
 
+        const colors = pairColors[pairId % pairColors.length];
+
+        ctx.save();
+
+        // Draw rounded rectangle background with gradient
+        const gradient = ctx.createLinearGradient(minX, minY, minX, maxY);
+        gradient.addColorStop(0, colors.bg);
+        gradient.addColorStop(1, "rgba(0, 0, 0, 0.05)");
+
+        ctx.fillStyle = gradient;
+        this.roundRect(ctx, minX, minY, width, height, cornerRadius);
+        ctx.fill();
+
+        // Draw solid border (no dashes)
+        ctx.strokeStyle = colors.border;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([]); // Solid line
+        this.roundRect(ctx, minX, minY, width, height, cornerRadius);
+        ctx.stroke();
+
+        // Draw pair number badge BELOW the zone (centered)
+        const badgeWidth = this.game.getScaledValue(50);
+        const badgeHeight = this.game.getScaledValue(35);
+        const badgeY = maxY + this.game.getScaledValue(15);
+        const badgeCornerRadius = this.game.getScaledValue(8);
+
+        // Badge solid background
+        ctx.fillStyle = colors.border;
+        this.roundRect(
+          ctx,
+          centerX - badgeWidth / 2,
+          badgeY,
+          badgeWidth,
+          badgeHeight,
+          badgeCornerRadius
+        );
+        ctx.fill();
+
+        // Badge border for extra definition
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.lineWidth = this.game.getScaledValue(2);
+        this.roundRect(
+          ctx,
+          centerX - badgeWidth / 2,
+          badgeY,
+          badgeWidth,
+          badgeHeight,
+          badgeCornerRadius
+        );
+        ctx.stroke();
+
+        // Badge number
         this.renderText(
           ctx,
-          `Pair ${pairId + 1}`,
-          (minX + maxX) / 2,
-          minY - this.game.getScaledValue(10),
+          `${pairId + 1}`,
+          centerX,
+          badgeY + badgeHeight / 2,
           {
-            fontSize: layout.bodyFontSize,
-            color: "rgba(255, 255, 255, 0.8)",
+            fontSize: layout.headerFontSize,
+            color: "rgba(255, 255, 255, 0.95)",
+            align: "center",
+            baseline: "middle",
+            weight: "bold",
           }
         );
 
@@ -913,10 +1039,26 @@ class MatchScreen extends Screen {
     }
   }
 
+  // Helper method to draw rounded rectangles
+  roundRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+  }
+
   renderDropZones(ctx) {
     const lineWidth = this.game.getScaledValue(2);
     const hoverLineWidth = this.game.getScaledValue(3);
     const shadowBlur = this.game.getScaledValue(15);
+    const cornerRadius = this.game.getScaledValue(10); // Match pair box corner radius
 
     this.dropZones.forEach((zone, index) => {
       ctx.save();
@@ -936,21 +1078,29 @@ class MatchScreen extends Screen {
 
       ctx.strokeStyle = zone.sock ? "rgba(100, 255, 100, 0.8)" : "white";
       ctx.lineWidth = this.dropZoneHover === index ? hoverLineWidth : lineWidth;
-      ctx.strokeRect(
+
+      // Draw rounded rectangle for drop zone
+      this.roundRect(
+        ctx,
         zone.x - zone.width / 2,
         zone.y - zone.height / 2,
         zone.width,
-        zone.height
+        zone.height,
+        cornerRadius
       );
+      ctx.stroke();
 
       if (this.dropZoneHover === index) {
         ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
-        ctx.fillRect(
+        this.roundRect(
+          ctx,
           zone.x - zone.width / 2,
           zone.y - zone.height / 2,
           zone.width,
-          zone.height
+          zone.height,
+          cornerRadius
         );
+        ctx.fill();
       }
 
       ctx.restore();
@@ -973,41 +1123,122 @@ class MatchScreen extends Screen {
 
   renderMatchScreenUI(ctx) {
     const layout = this.layoutCache;
+    const canvasWidth = this.game.getCanvasWidth();
 
-    // Instructions beside sock pile with arrow
-    const instructionText = "Click sock pile";
+    // Instructional text below the top bar
+    const instructionY =
+      layout.barY + layout.barHeight + this.game.getScaledValue(25);
     this.renderText(
       ctx,
-      instructionText,
-      layout.instructionArrowX + this.game.getScaledValue(60),
-      layout.instructionArrowY,
+      "Drag matching socks to a drop zone to make a sockball",
+      canvasWidth / 2,
+      instructionY,
       {
         fontSize: layout.bodyFontSize,
-        color: "rgba(255, 255, 255, 0.9)",
-        align: "left",
+        color: "rgba(255, 255, 255, 0.85)",
+        align: "center",
+        baseline: "middle",
+        weight: "normal",
       }
     );
 
-    // Draw arrow pointing at sock pile
-    ctx.save();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.lineWidth = this.game.getScaledValue(3);
+    // Remaining socks counter to the LEFT of sock pile
+    if (this.sockManager.sockList.length > 0) {
+      const remainingSocks = this.sockManager.sockList.length;
+      const counterText = `${remainingSocks} ${
+        remainingSocks === 1 ? "Sock" : "Socks"
+      }`;
 
-    // Arrow line
-    ctx.beginPath();
-    ctx.moveTo(layout.instructionArrowX + this.game.getScaledValue(50), layout.instructionArrowY);
-    ctx.lineTo(layout.instructionArrowX, layout.instructionArrowY);
-    ctx.stroke();
+      // Position to the left of sock pile
+      const counterX = layout.sockPileX - this.game.getScaledValue(140);
+      const counterY = layout.sockPileY;
 
-    // Arrowhead
-    ctx.beginPath();
-    ctx.moveTo(layout.instructionArrowX, layout.instructionArrowY);
-    ctx.lineTo(layout.instructionArrowX + this.game.getScaledValue(15), layout.instructionArrowY - this.game.getScaledValue(8));
-    ctx.lineTo(layout.instructionArrowX + this.game.getScaledValue(15), layout.instructionArrowY + this.game.getScaledValue(8));
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+      // Draw background panel with rounded corners
+      ctx.save();
+      const textWidth = this.game.getScaledValue(100);
+      const textHeight = this.game.getScaledValue(50);
+      const cornerRadius = this.game.getScaledValue(10); // Match other UI elements
+
+      // Draw rounded background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      this.roundRect(
+        ctx,
+        counterX - textWidth / 2,
+        counterY - textHeight / 2,
+        textWidth,
+        textHeight,
+        cornerRadius
+      );
+      ctx.fill();
+
+      // Draw rounded border
+      ctx.strokeStyle = "rgba(255, 215, 0, 0.6)";
+      ctx.lineWidth = this.game.getScaledValue(2);
+      this.roundRect(
+        ctx,
+        counterX - textWidth / 2,
+        counterY - textHeight / 2,
+        textWidth,
+        textHeight,
+        cornerRadius
+      );
+      ctx.stroke();
+
+      // Draw text
+      this.renderText(ctx, counterText, counterX, counterY, {
+        fontSize: layout.bodyFontSize,
+        color: "rgba(255, 215, 0, 0.9)",
+        align: "center",
+        baseline: "middle",
+        weight: "bold",
+      });
+      ctx.restore();
+    }
+
+    // Instructions beside sock pile with arrow - only show if pile is not empty
+    if (this.sockManager.sockList.length > 0) {
+      const instructionText = "Click sock pile";
+      this.renderText(
+        ctx,
+        instructionText,
+        layout.instructionArrowX + this.game.getScaledValue(60),
+        layout.instructionArrowY,
+        {
+          fontSize: layout.bodyFontSize,
+          color: "rgba(255, 255, 255, 0.9)",
+          align: "left",
+        }
+      );
+
+      // Draw hand icon pointing at sock pile
+      ctx.save();
+
+      if (this.game.images["arrow-no-pixel.png"]) {
+        const handIcon = this.game.images["arrow-no-pixel.png"];
+        const handIconHeight = this.game.getScaledValue(40);
+        const aspectRatio = handIcon.width / handIcon.height;
+        const handIconWidth = handIconHeight * aspectRatio;
+
+        // Position for the hand icon
+        const handX = layout.instructionArrowX + this.game.getScaledValue(25);
+        const handY = layout.instructionArrowY;
+
+        // Translate to center of icon, apply rotation and flip, then draw
+        ctx.translate(handX, handY);
+        ctx.rotate(-Math.PI / 2); // Rotate 90 degrees counter-clockwise (pointing left)
+        ctx.scale(-1, 1); // Flip horizontally
+
+        ctx.drawImage(
+          handIcon,
+          -handIconWidth / 2,
+          -handIconHeight / 2,
+          handIconWidth,
+          handIconHeight
+        );
+      }
+
+      ctx.restore();
+    }
 
     // Render top bar
     this.renderTopBar(ctx);
@@ -1016,6 +1247,11 @@ class MatchScreen extends Screen {
   renderTopBar(ctx) {
     const layout = this.layoutCache;
     const canvasWidth = this.game.getCanvasWidth();
+
+    // Get level data once for the entire top bar
+    const level = GameConfig.LEVELS[this.game.currentLevel];
+    const totalSockballs = level ? level.sockPairs : 0;
+    const timeLimit = level ? level.matchingTime : 60;
 
     // Draw top bar background
     ctx.save();
@@ -1031,27 +1267,83 @@ class MatchScreen extends Screen {
     ctx.stroke();
     ctx.restore();
 
-    // Sockballs counter (left side)
+    // Sockballs counter (left side) - now shows x/total format
     const sockBallsX = layout.sockBallsX;
     const sockBallsY = layout.sockBallsY;
 
-    this.renderText(ctx, "🧦", sockBallsX - this.game.getScaledValue(25), sockBallsY, {
-      fontSize: layout.headerFontSize,
+    // Draw sock icon
+    if (this.game.images["icon-sock.png"]) {
+      const sockIcon = this.game.images["icon-sock.png"];
+      const sockIconHeight = this.game.getScaledValue(40);
+      const sockIconWidth = sockIconHeight * (sockIcon.width / sockIcon.height);
+      ctx.drawImage(
+        sockIcon,
+        sockBallsX - this.game.getScaledValue(40) - sockIconWidth / 2,
+        sockBallsY - sockIconHeight / 2,
+        sockIconWidth,
+        sockIconHeight
+      );
+    }
+
+    this.renderText(
+      ctx,
+      `${this.game.sockBalls} / ${totalSockballs}`,
+      sockBallsX + this.game.getScaledValue(10),
+      sockBallsY,
+      {
+        fontSize: layout.headerFontSize,
+        align: "left",
+        baseline: "middle",
+        color: "rgba(255, 215, 0, 0.9)",
+        weight: "bold",
+      }
+    );
+
+    // Streak counter (CENTER of top bar - always visible)
+    // Determine which fire icon to use based on streak
+    let fireIcon = "icon-fire1.png"; // Default fire icon
+    if (this.matchStreak >= 10) {
+      fireIcon = "icon-fire3.png"; // Biggest flame for 10+ streak
+    } else if (this.matchStreak >= 5) {
+      fireIcon = "icon-fire2.png"; // Medium flame for 5+ streak
+    }
+
+    const streakText = `${this.matchStreak}x Streak`;
+    const streakColor =
+      this.matchStreak >= 10
+        ? "rgba(255, 100, 0, 0.9)" // Hot orange for 10+
+        : this.matchStreak >= 5
+        ? "rgba(255, 165, 0, 0.9)" // Orange for 5+
+        : this.matchStreak >= 3
+        ? "rgba(255, 200, 0, 0.9)" // Yellow-orange for 3+
+        : "rgba(200, 200, 200, 0.7)"; // Gray for 0-2
+
+    // Draw streak text first
+    this.renderText(ctx, streakText, layout.streakX, layout.streakY, {
+      fontSize: layout.bodyFontSize,
       align: "center",
       baseline: "middle",
-    });
-
-    this.renderText(ctx, `${this.game.sockBalls}`, sockBallsX + this.game.getScaledValue(10), sockBallsY, {
-      fontSize: layout.headerFontSize,
-      align: "left",
-      baseline: "middle",
-      color: "rgba(255, 215, 0, 0.9)",
+      color: streakColor,
       weight: "bold",
     });
 
-    // Time display
+    // Draw fire icon to the right of the text
+    const iconSize = layout.bodyFontSize * 1.2;
+    ctx.font = `bold ${layout.bodyFontSize}px "Press Start 2P", monospace`;
+    const textWidth = ctx.measureText(streakText).width;
+    const iconX = layout.streakX + textWidth / 2 + 5;
+    if (this.game.images[fireIcon]) {
+      ctx.drawImage(
+        this.game.images[fireIcon],
+        iconX,
+        layout.streakY - iconSize / 2,
+        iconSize,
+        iconSize
+      );
+    }
+
+    // Time display (left of center)
     const timeElapsed = Math.max(0, Math.floor(this.game.timeElapsed));
-    const timeLimit = GameConfig.LEVELS[this.game.currentLevel].matchingTime;
     const isOverTime = timeElapsed > timeLimit;
 
     const timeColor = isOverTime
@@ -1060,11 +1352,20 @@ class MatchScreen extends Screen {
       ? "rgba(255, 200, 68, 0.9)"
       : "rgba(255, 255, 255, 0.9)";
 
-    this.renderText(ctx, "⏱️", layout.timeX - this.game.getScaledValue(50), layout.timeY, {
-      fontSize: layout.headerFontSize,
-      align: "center",
-      baseline: "middle",
-    });
+    // Draw clock icon
+    if (this.game.images["icon-clock.png"]) {
+      const clockIcon = this.game.images["icon-clock.png"];
+      const clockIconHeight = this.game.getScaledValue(40);
+      const clockIconWidth =
+        clockIconHeight * (clockIcon.width / clockIcon.height);
+      ctx.drawImage(
+        clockIcon,
+        layout.timeX - this.game.getScaledValue(50) - clockIconWidth / 2,
+        layout.timeY - clockIconHeight / 2,
+        clockIconWidth,
+        clockIconHeight
+      );
+    }
 
     const timeText = `${timeElapsed}s / ${timeLimit}s`;
     this.renderText(ctx, timeText, layout.timeX, layout.timeY, {
@@ -1074,18 +1375,6 @@ class MatchScreen extends Screen {
       color: timeColor,
       weight: "bold",
     });
-
-    // Streak counter (only show if streak > 1)
-    if (this.matchStreak > 1) {
-      const streakText = `🔥 ${this.matchStreak}x STREAK`;
-      this.renderText(ctx, streakText, layout.streakX, layout.streakY, {
-        fontSize: layout.bodyFontSize,
-        align: "left",
-        baseline: "middle",
-        color: "rgba(255, 165, 0, 0.9)",
-        weight: "bold",
-      });
-    }
 
     // Pause button
     this.renderBottomBarButton(
@@ -1117,45 +1406,128 @@ class MatchScreen extends Screen {
 
     const buttonLeft = x - width / 2;
     const buttonTop = y - height / 2;
-    const radius = this.game.getScaledValue(6);
 
-    // Button background
-    ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
-    ctx.strokeStyle = isHovered ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 2;
+    // Check which button this is and get the appropriate image
+    const isExitButton = text === "Exit";
+    const isPauseButton = text === "❚❚ Pause";
+    const isResumeButton = text === "▶ Resume";
 
-    // Rounded rectangle
-    ctx.beginPath();
-    ctx.moveTo(buttonLeft + radius, buttonTop);
-    ctx.lineTo(buttonLeft + width - radius, buttonTop);
-    ctx.arcTo(buttonLeft + width, buttonTop, buttonLeft + width, buttonTop + radius, radius);
-    ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
-    ctx.arcTo(buttonLeft + width, buttonTop + height, buttonLeft + width - radius, buttonTop + height, radius);
-    ctx.lineTo(buttonLeft + radius, buttonTop + height);
-    ctx.arcTo(buttonLeft, buttonTop + height, buttonLeft, buttonTop + height - radius, radius);
-    ctx.lineTo(buttonLeft, buttonTop + radius);
-    ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    let buttonImage = null;
+    if (isExitButton) {
+      buttonImage = this.game.images["btn-exit.png"];
+    } else if (isPauseButton) {
+      buttonImage = this.game.images["btn-pause.png"];
+    } else if (isResumeButton) {
+      buttonImage = this.game.images["btn-resume.png"];
+    }
 
-    // Button text
-    this.renderText(ctx, text, x, y, {
-      fontSize: this.layoutCache.smallFontSize,
-      align: "center",
-      baseline: "middle",
-      color: "rgba(255, 255, 255, 0.9)",
-      weight: "bold",
-    });
+    if (buttonImage) {
+      // Use button image - always fit to height for consistency
+      const aspectRatio = buttonImage.width / buttonImage.height;
+
+      // Always fit to height to ensure all buttons have same height
+      const imgHeight = height;
+      const imgWidth = imgHeight * aspectRatio;
+
+      const imgX = buttonLeft + (width - imgWidth) / 2;
+      const imgY = buttonTop;
+
+      // Apply hover effect - scale and add glow
+      if (isHovered) {
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = buttonLeft + (width - scaledWidth) / 2;
+        const scaledY = buttonTop + (height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    } else {
+      // Fallback for other buttons - use gradient style
+      const radius = this.game.getScaledValue(6);
+
+      // Button background
+      ctx.fillStyle = isHovered ? this.lightenColor(baseColor) : baseColor;
+      ctx.strokeStyle = isHovered
+        ? "rgba(255, 255, 255, 0.8)"
+        : "rgba(255, 255, 255, 0.4)";
+      ctx.lineWidth = 2;
+
+      // Rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(buttonLeft + radius, buttonTop);
+      ctx.lineTo(buttonLeft + width - radius, buttonTop);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop,
+        buttonLeft + width,
+        buttonTop + radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft + width, buttonTop + height - radius);
+      ctx.arcTo(
+        buttonLeft + width,
+        buttonTop + height,
+        buttonLeft + width - radius,
+        buttonTop + height,
+        radius
+      );
+      ctx.lineTo(buttonLeft + radius, buttonTop + height);
+      ctx.arcTo(
+        buttonLeft,
+        buttonTop + height,
+        buttonLeft,
+        buttonTop + height - radius,
+        radius
+      );
+      ctx.lineTo(buttonLeft, buttonTop + radius);
+      ctx.arcTo(buttonLeft, buttonTop, buttonLeft + radius, buttonTop, radius);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Button text
+      this.renderText(ctx, text, x, y, {
+        fontSize: this.layoutCache.smallFontSize,
+        align: "center",
+        baseline: "middle",
+        color: "rgba(255, 255, 255, 0.9)",
+        weight: "bold",
+      });
+    }
 
     ctx.restore();
+  }
+
+  renderPauseOverlay(ctx) {
+    // Call parent to render the dark overlay and "PAUSED" text
+    super.renderPauseOverlay(ctx);
+
+    // Render the resume button on top of the overlay
+    const layout = this.layoutCache;
+    this.renderBottomBarButton(
+      ctx,
+      layout.pauseButtonX,
+      layout.pauseButtonY,
+      layout.pauseButtonWidth,
+      layout.pauseButtonHeight,
+      "▶ Resume",
+      this.pauseButton.hovered,
+      "rgba(100, 100, 100, 0.8)"
+    );
   }
 
   lightenColor(color) {
     // Simple color lightening - increase opacity or brightness
     return color.replace(/[\d.]+\)$/, (match) => {
       const opacity = parseFloat(match);
-      return (Math.min(opacity + 0.1, 1.0)) + ")";
+      return Math.min(opacity + 0.1, 1.0) + ")";
     });
   }
 }

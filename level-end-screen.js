@@ -10,9 +10,11 @@ class LevelEndScreen extends Screen {
     this.titleBounceTimer = 0;
     this.marthaScaleTimer = 0;
     this.showStars = false;
-    this.showVideoButton = false;
-    this.videoPlayerActive = false;
-    this.videoElement = null;
+
+    // Animation state for sockballs spritesheet
+    this.marthaAnimationFrame = 0;
+    this.marthaAnimationTimer = 0;
+    this.useSpritesheet = false;
   }
 
   resetScores() {
@@ -28,19 +30,20 @@ class LevelEndScreen extends Screen {
     this.currentStageIndex = 0;
     this.scoreStages = [];
     this.scoreLineAnimations = [0, 0, 0, 0, 0, 0, 0, 0]; // Animation timers for each line
-    this.scoreLineVisible = [false, false, false, false, false, false, false, false];
+    this.scoreLineVisible = [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ];
   }
 
   initializeButton() {
     this.continueButton = {
-      x: 0,
-      y: 0,
-      width: 200,
-      height: 50,
-      hovered: false,
-      pressed: false,
-    };
-    this.videoButton = {
       x: 0,
       y: 0,
       width: 200,
@@ -54,7 +57,7 @@ class LevelEndScreen extends Screen {
     const baseLayout = super.createLayoutCache();
     const canvasWidth = this.game.getCanvasWidth();
     const canvasHeight = this.game.getCanvasHeight();
-    const marthaImageSize = this.game.getScaledValue(100);
+    const marthaImageSize = this.game.getScaledValue(150); // Increased for better visibility
     const marthaToStatsMargin = this.game.getScaledValue(30);
 
     return {
@@ -77,7 +80,6 @@ class LevelEndScreen extends Screen {
       buttonWidth: this.game.getScaledValue(200),
       buttonHeight: this.game.getScaledValue(50),
       buttonY: canvasHeight / 2 + this.game.getScaledValue(240),
-      videoButtonY: canvasHeight / 2 + this.game.getScaledValue(305),
     };
   }
 
@@ -85,23 +87,78 @@ class LevelEndScreen extends Screen {
     super.setup();
     this.resetScores();
     this.calculateScoresAndRent();
+
+    // Mark level as complete if no rent penalty (moved from handleContinue)
+    // This must happen BEFORE checking for NEW GAME+ unlock
+    if (this.rentPenalty === 0) {
+      this.game.completedLevels[this.game.currentLevel] = true;
+      console.log(
+        `Level ${
+          this.game.currentLevel + 1
+        } marked as complete - no rent penalty!`
+      );
+
+      // Phase 3.3 - Track difficulty completion
+      this.game.markLevelCompleted(
+        this.game.currentLevel,
+        this.game.currentDifficulty
+      );
+
+      // Check achievements (moved from handleContinue)
+      // Fix Bug #23: Achievement: SOCK_MASTER (complete all 9 levels) - with defensive checks
+      const allLevelsCompleted =
+        this.game.completedLevels &&
+        this.game.completedLevels.every((completed) => completed);
+      if (allLevelsCompleted) {
+        this.game.unlockAchievement("sock_master");
+      }
+
+      // Achievement: NEW_GAME_PLUS_HERO (complete any level on +1 difficulty)
+      // Check if any level has been completed at difficulty >= 1
+      const hasCompletedNewGamePlus = Object.keys(
+        this.game.completedLevelsByDifficulty
+      ).some((difficulty) => {
+        const diff = parseInt(difficulty);
+        if (diff >= 1 && this.game.completedLevelsByDifficulty[diff]) {
+          return this.game.completedLevelsByDifficulty[diff].some(
+            (completed) => completed
+          );
+        }
+        return false;
+      });
+      if (hasCompletedNewGamePlus) {
+        this.game.unlockAchievement("new_game_plus_hero");
+      }
+
+      // Achievement: ULTIMATE_CHAMPION (complete all levels on +4 difficulty)
+      if (this.game.currentDifficulty >= 4) {
+        const allLevelsCompletedOnPlus4 = GameConfig.LEVELS.every(
+          (_, index) => {
+            return (
+              this.game.completedLevelsByDifficulty[4] &&
+              this.game.completedLevelsByDifficulty[4][index]
+            );
+          }
+        );
+        if (allLevelsCompletedOnPlus4) {
+          this.game.unlockAchievement("ultimate_champion");
+        }
+      }
+    }
+
+    // Check if NEW GAME+ was just unlocked (AFTER markLevelCompleted)
+    this.showingNewGamePlusUnlock = this.game.showNewGamePlusNotification;
+    if (this.showingNewGamePlusUnlock) {
+      this.game.showNewGamePlusNotification = false; // Reset flag
+      this.game.hasShownNewGamePlusBanner = true; // Mark banner as shown permanently
+      this.game.saveGameData(); // Persist the flag immediately
+    }
+
     this.setupScoreAnimation();
     this.onResize();
     this.initializeParticles();
     this.titleBounceTimer = 0;
     this.marthaScaleTimer = 0;
-
-    // Check if NEW GAME+ was just unlocked
-    this.showingNewGamePlusUnlock = this.game.showNewGamePlusNotification;
-    if (this.showingNewGamePlusUnlock) {
-      this.game.showNewGamePlusNotification = false; // Reset flag
-    }
-
-    // Show video button only if all 9 base levels have been completed
-    const allBaseLevelsCompleted = this.game.completedLevelsByDifficulty[0] &&
-                                   this.game.completedLevelsByDifficulty[0].every(completed => completed);
-    this.showVideoButton = allBaseLevelsCompleted;
-    this.videoPlayerActive = false;
 
     console.log(
       "🎵 Level end screen setup - no music started here (handled by throwing screen)"
@@ -110,9 +167,6 @@ class LevelEndScreen extends Screen {
 
   cleanup() {
     super.cleanup();
-
-    // Close video player if active
-    this.closeVideoPlayer();
 
     // Level end screen doesn't start its own music, so no cleanup needed
     // The throwing screen handles the victory/defeat music
@@ -137,56 +191,102 @@ class LevelEndScreen extends Screen {
     this.goodCatches = this.game.catchQualityCounts?.GOOD || 0;
     this.regularCatches = this.game.catchQualityCounts?.REGULAR || 0;
 
-    // Base points
-    this.sockballsPaidPoints = this.sockballsPaid * 5;
+    // Catch quality bonuses (these replace the base 5 points per sockball)
+    this.perfectCatchesPoints = this.perfectCatches * 15;
+    this.goodCatchesPoints = this.goodCatches * 10;
+    this.regularCatchesPoints = this.regularCatches * 5;
 
-    // Time bonus: double the rent payment points if earned
+    // Calculate base points for sockballs that were caught
+    // Total caught sockballs = sum of all catch qualities
+    const totalCaughtSockballs =
+      this.perfectCatches + this.goodCatches + this.regularCatches;
+    const totalCatchQualityPoints =
+      this.perfectCatchesPoints +
+      this.goodCatchesPoints +
+      this.regularCatchesPoints;
+
+    // For sockballs paid but not caught (missed/failed), give base 5 points each
+    const uncaughtPaidSockballs = Math.max(
+      0,
+      this.sockballsPaid - totalCaughtSockballs
+    );
+    this.sockballsPaidPoints = uncaughtPaidSockballs * 5;
+
+    // Time bonus: double the total rent payment points (catch quality + base) if earned
     this.timeBonusPoints = 0;
     if (this.game.timeBonusEarned && this.sockballsPaid > 0) {
-      this.timeBonusPoints = this.sockballsPaidPoints; // Same as sockballsPaid * 5
+      this.timeBonusPoints = totalCatchQualityPoints + this.sockballsPaidPoints;
     }
 
     this.sockballsLeftoverPoints = this.sockballsLeftover * 10;
     this.rentPenaltyPoints = this.rentPenalty * -10;
-    this.totalScore =
+
+    // Calculate the raw total (can be negative)
+    const rawTotal =
       this.sockballsPaidPoints +
+      this.perfectCatchesPoints +
+      this.goodCatchesPoints +
+      this.regularCatchesPoints +
       this.timeBonusPoints +
       this.sockballsLeftoverPoints +
       this.rentPenaltyPoints;
 
+    // Store both the raw total for display and the capped total for points
+    this.totalScoreRaw = rawTotal;
+    this.totalScore = Math.max(0, rawTotal);
+
     this.showRentDue = this.rentPenalty > 0;
     this.showStars = !this.showRentDue; // Show stars only on success
-    this.marthaImage = this.showRentDue
-      ? this.game.images["martha-rentdue.png"]
-      : this.game.images["martha-win.png"];
+
+    // Use spritesheets for both win and lose states
+    this.useSpritesheet = true;
+    this.marthaAnimationFrame = 0;
+    this.marthaAnimationTimer = 0;
+
+    if (this.showRentDue) {
+      this.marthaImage = this.game.images["martha-losing-spritesheet.png"];
+    } else {
+      // Choose winning Martha spritesheet based on difficulty
+      const difficulty = this.game.currentDifficulty || 0;
+
+      if (difficulty >= 3) {
+        // NEW GAME+ 3-4: Use fatsop spritesheet
+        this.marthaImage = this.game.images["martha-fatsop-spritesheet.png"];
+      } else if (difficulty >= 1) {
+        // NEW GAME+ 1-2: Use rumble spritesheet
+        this.marthaImage = this.game.images["martha-rumble-spritesheet.png"];
+      } else {
+        // Normal difficulty: Use default sockballs spritesheet
+        this.marthaImage = this.game.images["martha-sockballs-spritesheet.png"];
+      }
+    }
   }
 
   setupScoreAnimation() {
     // Calculate animation duration to always take 3 seconds total
     const totalAnimationTime = 3000; // 3 seconds in milliseconds
 
+    // Time bonus display value (in points, not sockballs)
+    const timeBonusDisplayValue = this.game.timeBonusEarned
+      ? Math.floor(this.timeBonusPoints / 5)
+      : 0;
+
     // Calculate total steps needed across all stages
     const totalSteps =
-      this.sockballsPaid +
       this.perfectCatches +
       this.goodCatches +
       this.regularCatches +
-      (this.game.timeBonusEarned ? this.sockballsPaid : 0) +
+      timeBonusDisplayValue +
       this.sockballsLeftover +
       this.rentPenalty +
-      Math.abs(this.totalScore);
+      Math.abs(this.totalScoreRaw);
 
     // Calculate rate (ms per step) to complete in 3 seconds
     // If totalSteps is 0, use a default rate
-    const calculatedRate = totalSteps > 0 ? totalAnimationTime / totalSteps : 50;
+    const calculatedRate =
+      totalSteps > 0 ? totalAnimationTime / totalSteps : 50;
 
     this.scoreStages = [
-      {
-        label: "sockballsPaidDisplay",
-        start: 0,
-        end: this.sockballsPaid,
-        rate: calculatedRate,
-      },
       {
         label: "perfectCatchesDisplay",
         start: 0,
@@ -208,7 +308,7 @@ class LevelEndScreen extends Screen {
       {
         label: "timeBonusDisplay",
         start: 0,
-        end: this.game.timeBonusEarned ? this.sockballsPaid : 0,
+        end: timeBonusDisplayValue,
         rate: calculatedRate,
       },
       {
@@ -226,8 +326,8 @@ class LevelEndScreen extends Screen {
       {
         label: "totalScoreDisplay",
         start: 0,
-        end: this.totalScore,
-        rate: calculatedRate
+        end: this.totalScoreRaw,
+        rate: calculatedRate,
       },
     ];
 
@@ -308,7 +408,10 @@ class LevelEndScreen extends Screen {
     // Update score line animations
     for (let i = 0; i < this.scoreLineAnimations.length; i++) {
       if (i <= this.currentStageIndex) {
-        this.scoreLineAnimations[i] = Math.min(1, this.scoreLineAnimations[i] + deltaTime / 300);
+        this.scoreLineAnimations[i] = Math.min(
+          1,
+          this.scoreLineAnimations[i] + deltaTime / 300
+        );
       }
     }
   }
@@ -319,11 +422,6 @@ class LevelEndScreen extends Screen {
     this.continueButton.height = layout.buttonHeight;
     this.continueButton.x = layout.centerX - layout.buttonWidth / 2;
     this.continueButton.y = layout.buttonY;
-
-    this.videoButton.width = layout.buttonWidth;
-    this.videoButton.height = layout.buttonHeight;
-    this.videoButton.x = layout.centerX - layout.buttonWidth / 2;
-    this.videoButton.y = layout.videoButtonY;
   }
 
   onUpdate(deltaTime) {
@@ -332,6 +430,36 @@ class LevelEndScreen extends Screen {
     this.updateParticles(deltaTime);
     this.titleBounceTimer += deltaTime * 0.003;
     this.marthaScaleTimer += deltaTime * 0.002;
+
+    // Update spritesheet animation
+    if (this.useSpritesheet) {
+      let config;
+      if (this.showRentDue) {
+        config = GameConfig.MARTHA_LOSING_SPRITESHEET;
+      } else {
+        // Choose config based on difficulty
+        const difficulty = this.game.currentDifficulty || 0;
+        if (difficulty >= 3) {
+          config = GameConfig.MARTHA_FATSOP_SPRITESHEET;
+        } else if (difficulty >= 1) {
+          config = GameConfig.MARTHA_RUMBLE_SPRITESHEET;
+        } else {
+          config = GameConfig.MARTHA_SOCKBALLS_SPRITESHEET;
+        }
+      }
+
+      const msPerFrame = 1000 / config.fps;
+      this.marthaAnimationTimer += deltaTime;
+
+      if (this.marthaAnimationTimer >= msPerFrame) {
+        this.marthaAnimationTimer -= msPerFrame;
+        this.marthaAnimationFrame =
+          (this.marthaAnimationFrame + 1) % config.animationFrames.length;
+      }
+    }
+
+    // Update feedback manager to keep achievement/story notifications visible
+    this.game.feedbackManager.update(deltaTime);
   }
 
   updateParticles(deltaTime) {
@@ -360,50 +488,22 @@ class LevelEndScreen extends Screen {
   }
 
   onMouseMove(x, y) {
-    if (this.videoPlayerActive) return;
-
     const b = this.continueButton;
     b.hovered =
       x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
-
-    if (this.showVideoButton) {
-      const v = this.videoButton;
-      v.hovered =
-        x >= v.x && x <= v.x + v.width && y >= v.y && y <= v.y + v.height;
-    }
   }
 
   onMouseDown(x, y) {
-    if (this.videoPlayerActive) return;
-
     if (this.continueButton.hovered) {
       this.continueButton.pressed = true;
-    }
-    if (this.showVideoButton && this.videoButton.hovered) {
-      this.videoButton.pressed = true;
     }
   }
 
   onMouseUp() {
-    if (this.videoPlayerActive) return;
-
     this.continueButton.pressed = false;
-    if (this.showVideoButton) {
-      this.videoButton.pressed = false;
-    }
   }
 
   handleKeyDown(e) {
-    // Close video player with Escape
-    if (this.videoPlayerActive && e.key === "Escape") {
-      this.closeVideoPlayer();
-      e.preventDefault();
-      return;
-    }
-
-    // Don't handle other keys if video is active
-    if (this.videoPlayerActive) return;
-
     // Enter or Space to continue
     if (e.key === "Enter" || e.key === " ") {
       this.handleContinue();
@@ -418,55 +518,18 @@ class LevelEndScreen extends Screen {
   }
 
   handleContinue() {
+    // Add points to player's total
     this.game.playerPoints = Math.max(
       0,
       this.game.playerPoints + this.totalScore
     );
 
-    // Mark level as complete if no rent penalty
-    if (this.rentPenalty === 0) {
-      this.game.completedLevels[this.game.currentLevel] = true;
-      console.log(
-        `Level ${
-          this.game.currentLevel + 1
-        } marked as complete - no rent penalty!`
-      );
-
-      // Phase 3.3 - Track difficulty completion
-      this.game.markLevelCompleted(
-        this.game.currentLevel,
-        this.game.currentDifficulty
-      );
-
-      // Fix Bug #23: Achievement: SOCK_MASTER (complete all 9 levels) - with defensive checks
-      const allLevelsCompleted = this.game.completedLevels && this.game.completedLevels.every(
-        (completed) => completed
-      );
-      if (allLevelsCompleted) {
-        this.game.unlockAchievement("sock_master");
-      }
-
-      // Achievement: NEW_GAME_PLUS_HERO (complete any level on +1 difficulty)
-      if (this.game.currentDifficulty >= 1) {
-        this.game.unlockAchievement("new_game_plus_hero");
-      }
-
-      // Achievement: ULTIMATE_CHAMPION (complete all levels on +4 difficulty)
-      if (this.game.currentDifficulty >= 4) {
-        const allLevelsCompletedOnPlus4 = GameConfig.LEVELS.every(
-          (_, index) => {
-            return (
-              this.game.completedLevelsByDifficulty[4] &&
-              this.game.completedLevelsByDifficulty[4][index]
-            );
-          }
-        );
-        if (allLevelsCompletedOnPlus4) {
-          this.game.unlockAchievement("ultimate_champion");
-        }
-      }
+    // Achievement: DEEP_POCKETS (have 500 money at once)
+    if (this.game.playerPoints >= 500) {
+      this.game.unlockAchievement("deep_pockets");
     }
 
+    // Save game data (level completion and achievements were already handled in setup)
     this.game.saveGameData();
 
     // Use the new state management system to return to menu
@@ -474,27 +537,10 @@ class LevelEndScreen extends Screen {
   }
 
   onClick(x, y) {
-    if (this.videoPlayerActive) {
-      // Check if click is outside video player
-      const videoWidth = this.game.getScaledValue(640);
-      const videoHeight = this.game.getScaledValue(360);
-      const videoX = (this.game.getCanvasWidth() - videoWidth) / 2;
-      const videoY = (this.game.getCanvasHeight() - videoHeight) / 2;
-
-      const clickedOutside = x < videoX - 10 || x > videoX + videoWidth + 10 ||
-                             y < videoY - 10 || y > videoY + videoHeight + 10;
-
-      if (clickedOutside) {
-        this.closeVideoPlayer();
-      }
-      return;
-    }
-
-    if (this.continueButton.hovered) {
+    // Use direct hit detection instead of hover state for touch compatibility
+    const b = this.continueButton;
+    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
       this.handleContinue();
-    }
-    if (this.showVideoButton && this.videoButton.hovered) {
-      this.openVideoPlayer();
     }
   }
 
@@ -504,22 +550,15 @@ class LevelEndScreen extends Screen {
     this.renderContent(ctx);
     this.renderContinueButton(ctx);
 
-    // Render video button if shown
-    if (this.showVideoButton) {
-      this.renderVideoButton(ctx);
-    }
-
-    // Render video player modal if active
-    if (this.videoPlayerActive) {
-      this.renderVideoPlayer(ctx);
-    }
-
     // NEW GAME+: Render unlock notification if just unlocked
     if (this.showingNewGamePlusUnlock) {
       this.renderNewGamePlusUnlock(ctx);
     }
 
     ctx.restore();
+
+    // Render feedback manager (achievement/story notifications) on top of everything
+    this.game.feedbackManager.render(ctx);
   }
 
   renderMainContainer(ctx) {
@@ -549,7 +588,9 @@ class LevelEndScreen extends Screen {
 
     // Enhanced shadow with glow
     ctx.save();
-    ctx.shadowColor = this.showRentDue ? "rgba(0,0,0,0.6)" : "rgba(100,100,255,0.3)";
+    ctx.shadowColor = this.showRentDue
+      ? "rgba(0,0,0,0.6)"
+      : "rgba(100,100,255,0.3)";
     ctx.shadowBlur = this.game.getScaledValue(20);
     ctx.fillStyle = "rgba(0,0,0,0.3)";
     ctx.fillRect(
@@ -646,7 +687,8 @@ class LevelEndScreen extends Screen {
       const x = layout.centerX + Math.cos(star.angle) * star.distance;
       const y = layout.titleY + Math.sin(star.angle) * star.distance * 0.5;
 
-      ctx.globalAlpha = star.alpha * (0.6 + Math.sin(this.glowTimer + star.pulseOffset) * 0.4);
+      ctx.globalAlpha =
+        star.alpha * (0.6 + Math.sin(this.glowTimer + star.pulseOffset) * 0.4);
 
       // Draw star
       this.drawStar(ctx, x, y, 5, star.size, star.size / 2, "#FFD700");
@@ -684,10 +726,12 @@ class LevelEndScreen extends Screen {
     ctx.save();
 
     // Animated bounce effect
-    const bounceOffset = Math.sin(this.titleBounceTimer) * this.game.getScaledValue(5);
+    const bounceOffset =
+      Math.sin(this.titleBounceTimer) * this.game.getScaledValue(5);
     const titleY = layout.titleY + bounceOffset;
 
-    // Determine colors based on success/failure
+    // Determine title text and colors based on success/failure
+    const titleText = this.showRentDue ? "LEVEL FAILED!" : "LEVEL COMPLETE!";
     const titleColor = this.showRentDue ? "#FF6B6B" : "#FFD700";
     const shadowColor = this.showRentDue ? "#8B0000" : "#FFA500";
     const glowColor = this.showRentDue ? "#FF0000" : "#FFFF00";
@@ -700,10 +744,10 @@ class LevelEndScreen extends Screen {
 
     // Background text (for depth)
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-    ctx.font = `bold ${this.game.getScaledValue(48)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(48)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("LEVEL COMPLETE!", layout.centerX + 4, titleY + 4);
+    ctx.fillText(titleText, layout.centerX + 4, titleY + 4);
 
     // Glowing outline
     ctx.shadowBlur = this.game.getScaledValue(20);
@@ -715,13 +759,13 @@ class LevelEndScreen extends Screen {
     ctx.globalAlpha = glowIntensity;
     ctx.strokeStyle = titleColor;
     ctx.lineWidth = this.game.getScaledValue(3);
-    ctx.strokeText("LEVEL COMPLETE!", layout.centerX, titleY);
+    ctx.strokeText(titleText, layout.centerX, titleY);
 
     // Main text
     ctx.globalAlpha = 1;
     ctx.shadowBlur = this.game.getScaledValue(10);
     ctx.fillStyle = titleColor;
-    ctx.fillText("LEVEL COMPLETE!", layout.centerX, titleY);
+    ctx.fillText(titleText, layout.centerX, titleY);
 
     ctx.restore();
   }
@@ -731,31 +775,77 @@ class LevelEndScreen extends Screen {
 
     const image = this.marthaImage;
     const desiredHeight = layout.marthaImageSize;
-    const aspectRatio = image.width / image.height;
-    const desiredWidth = desiredHeight * aspectRatio;
 
     // Gentle floating animation
-    const floatOffset = Math.sin(this.marthaScaleTimer) * this.game.getScaledValue(3);
+    const floatOffset =
+      Math.sin(this.marthaScaleTimer) * this.game.getScaledValue(3);
     const scale = 1 + Math.sin(this.marthaScaleTimer * 0.8) * 0.03;
-
-    const imageX = layout.centerX - (desiredWidth * scale) / 2;
-    const imageY = layout.marthaImageY + floatOffset;
 
     ctx.save();
 
     // Add glow around Martha
     if (!this.showRentDue) {
       ctx.shadowColor = "#4ECDC4";
-      ctx.shadowBlur = this.game.getScaledValue(20) * this.getGlowIntensity(0.5, 1.0);
+      ctx.shadowBlur =
+        this.game.getScaledValue(20) * this.getGlowIntensity(0.5, 1.0);
     }
 
-    ctx.drawImage(
-      image,
-      imageX,
-      imageY,
-      desiredWidth * scale,
-      desiredHeight * scale
-    );
+    if (this.useSpritesheet) {
+      // Render spritesheet frame - choose config based on difficulty
+      let config;
+      if (this.showRentDue) {
+        config = GameConfig.MARTHA_LOSING_SPRITESHEET;
+      } else {
+        const difficulty = this.game.currentDifficulty || 0;
+        if (difficulty >= 3) {
+          config = GameConfig.MARTHA_FATSOP_SPRITESHEET;
+        } else if (difficulty >= 1) {
+          config = GameConfig.MARTHA_RUMBLE_SPRITESHEET;
+        } else {
+          config = GameConfig.MARTHA_SOCKBALLS_SPRITESHEET;
+        }
+      }
+
+      const frameIndex = config.animationFrames[this.marthaAnimationFrame];
+      const col = frameIndex % config.columns;
+      const row = Math.floor(frameIndex / config.columns);
+
+      const sourceX = col * config.frameWidth;
+      const sourceY = row * config.frameHeight;
+
+      // Calculate desired width based on frame aspect ratio
+      const frameAspectRatio = config.frameWidth / config.frameHeight;
+      const desiredWidth = desiredHeight * frameAspectRatio;
+
+      const imageX = layout.centerX - (desiredWidth * scale) / 2;
+      const imageY = layout.marthaImageY + floatOffset;
+
+      ctx.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        config.frameWidth,
+        config.frameHeight,
+        imageX,
+        imageY,
+        desiredWidth * scale,
+        desiredHeight * scale
+      );
+    } else {
+      // Render static image
+      const aspectRatio = image.width / image.height;
+      const desiredWidth = desiredHeight * aspectRatio;
+      const imageX = layout.centerX - (desiredWidth * scale) / 2;
+      const imageY = layout.marthaImageY + floatOffset;
+
+      ctx.drawImage(
+        image,
+        imageX,
+        imageY,
+        desiredWidth * scale,
+        desiredHeight * scale
+      );
+    }
 
     ctx.restore();
   }
@@ -763,30 +853,22 @@ class LevelEndScreen extends Screen {
   renderScoreLines(ctx, layout) {
     const scoreLines = [
       {
-        label: `${this.sockballsPaidDisplay}x SOCKBALLS PAID:`,
-        value: this.sockballsPaidDisplay * 5,
-        color: "#4ECDC4",
-      },
-      {
-        label: `  ${this.perfectCatchesDisplay}x PERFECT CATCHES:`,
+        label: `${this.perfectCatchesDisplay}x PERFECT CATCHES:`,
         value: this.perfectCatchesDisplay * 15,
         color: "#FFD700",
         show: this.perfectCatches > 0,
-        indent: true,
       },
       {
-        label: `  ${this.goodCatchesDisplay}x GOOD CATCHES:`,
+        label: `${this.goodCatchesDisplay}x GOOD CATCHES:`,
         value: this.goodCatchesDisplay * 10,
         color: "#00FF00",
         show: this.goodCatches > 0,
-        indent: true,
       },
       {
-        label: `  ${this.regularCatchesDisplay}x NICE CATCHES:`,
+        label: `${this.regularCatchesDisplay}x NICE CATCHES:`,
         value: this.regularCatchesDisplay * 5,
         color: "#FFFFFF",
         show: this.regularCatches > 0,
-        indent: true,
       },
       {
         label: `TIME BONUS (2x RENT):`,
@@ -807,17 +889,18 @@ class LevelEndScreen extends Screen {
       },
       {
         label: `TOTAL SCORE:`,
-        value: this.totalScoreDisplay,
+        value: Math.max(0, this.totalScoreDisplay),
         color: "#FFD700",
       },
     ];
 
     // Filter out lines that shouldn't be shown
-    const visibleLines = scoreLines.filter(line => line.show !== false);
+    const visibleLines = scoreLines.filter((line) => line.show !== false);
 
     // Draw decorative separator line before total (adjusted for visible lines)
     ctx.save();
-    const separatorY = layout.scoreStartY + (visibleLines.length - 1.5) * layout.scoreLineHeight;
+    const separatorY =
+      layout.scoreStartY + (visibleLines.length - 1.5) * layout.scoreLineHeight;
     const separatorWidth = this.game.getScaledValue(400);
     const gradient = ctx.createLinearGradient(
       layout.centerX - separatorWidth / 2,
@@ -859,15 +942,26 @@ class LevelEndScreen extends Screen {
     });
   }
 
-  renderScoreLine(ctx, label, value, centerX, y, valueColor = "#FFD700", lineIndex = 0, isIndented = false) {
-    const fontSize = isIndented ? this.game.getScaledValue(16) : this.game.getScaledValue(20);
+  renderScoreLine(
+    ctx,
+    label,
+    value,
+    centerX,
+    y,
+    valueColor = "#FFD700",
+    lineIndex = 0,
+    isIndented = false
+  ) {
+    const fontSize = isIndented
+      ? this.game.getScaledValue(16)
+      : this.game.getScaledValue(20);
     const animProgress = this.scoreLineAnimations[lineIndex] || 0;
 
     // Slide in from left
     const slideOffset = (1 - this.easeOutBack(animProgress)) * -100;
 
     ctx.save();
-    ctx.font = `${fontSize}px Courier New`;
+    ctx.font = `${fontSize}px Arial`;
     ctx.textBaseline = "middle";
     ctx.globalAlpha = animProgress;
 
@@ -887,7 +981,7 @@ class LevelEndScreen extends Screen {
     // Scale up and pulse for total score only
     const isTotalScore = label.includes("TOTAL SCORE");
     if (isTotalScore) {
-      ctx.font = `bold ${fontSize * 1.2}px Courier New`;
+      ctx.font = `bold ${fontSize * 1.2}px Arial`;
       const pulseScale = 1 + Math.sin(this.pulseTimer * 2) * 0.05;
       ctx.save();
       ctx.translate(centerX + 20 + slideOffset, y);
@@ -903,223 +997,119 @@ class LevelEndScreen extends Screen {
 
   renderContinueButton(ctx) {
     const button = this.continueButton;
+    const buttonImage = this.game.images["btn-continue.png"];
 
     ctx.save();
 
-    // Enhanced gradient background
-    const gradient = ctx.createLinearGradient(
-      button.x,
-      button.y,
-      button.x,
-      button.y + button.height
-    );
+    if (buttonImage) {
+      // Use button image
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = button.width;
+      let imgHeight = imgWidth / aspectRatio;
 
-    let color1, color2;
-    if (button.pressed) {
-      color1 = "#2980B9";
-      color2 = "#1A5276";
-    } else if (button.hovered) {
-      color1 = "#4ECDC4";
-      color2 = "#3498DB";
+      // If height is too large, scale by height instead
+      if (imgHeight > button.height) {
+        imgHeight = button.height;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = button.x + (button.width - imgWidth) / 2;
+      const imgY = button.y + (button.height - imgHeight) / 2;
+
+      // Apply hover/pressed effects - scale and add glow
+      if (button.pressed) {
+        // Pressed state - slightly smaller scale
+        ctx.shadowColor = "rgba(255, 215, 0, 0.6)";
+        ctx.shadowBlur = this.game.getScaledValue(15);
+
+        const scale = 0.98;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = button.x + (button.width - scaledWidth) / 2;
+        const scaledY = button.y + (button.height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else if (button.hovered) {
+        // Hover state - scale up and glow
+        ctx.shadowColor = "rgba(255, 215, 0, 0.8)";
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = button.x + (button.width - scaledWidth) / 2;
+        const scaledY = button.y + (button.height - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        // Normal state
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
     } else {
-      color1 = "#3498DB";
-      color2 = "#2471A3";
-    }
+      // Fallback to gradient style if image not loaded
+      const gradient = ctx.createLinearGradient(
+        button.x,
+        button.y,
+        button.x,
+        button.y + button.height
+      );
 
-    gradient.addColorStop(0, color1);
-    gradient.addColorStop(1, color2);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(button.x, button.y, button.width, button.height);
+      let color1, color2;
+      if (button.pressed) {
+        color1 = "#2980B9";
+        color2 = "#1A5276";
+      } else if (button.hovered) {
+        color1 = "#4ECDC4";
+        color2 = "#3498DB";
+      } else {
+        color1 = "#3498DB";
+        color2 = "#2471A3";
+      }
 
-    // Enhanced border
-    ctx.strokeStyle = button.hovered ? "#5DADE2" : "#2980B9";
-    ctx.lineWidth = this.game.getScaledValue(3);
-    ctx.strokeRect(button.x, button.y, button.width, button.height);
+      gradient.addColorStop(0, color1);
+      gradient.addColorStop(1, color2);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(button.x, button.y, button.width, button.height);
 
-    // Glow effect when hovered
-    if (button.hovered) {
-      ctx.shadowColor = "#4ECDC4";
-      ctx.shadowBlur = this.game.getScaledValue(20) * this.getGlowIntensity(0.7, 1.0);
+      // Enhanced border
+      ctx.strokeStyle = button.hovered ? "#5DADE2" : "#2980B9";
+      ctx.lineWidth = this.game.getScaledValue(3);
       ctx.strokeRect(button.x, button.y, button.width, button.height);
 
-      // Inner highlight
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.lineWidth = this.game.getScaledValue(1);
-      ctx.strokeRect(
-        button.x + 2,
-        button.y + 2,
-        button.width - 4,
-        button.height - 4
-      );
-    }
+      // Glow effect when hovered
+      if (button.hovered) {
+        ctx.shadowColor = "#4ECDC4";
+        ctx.shadowBlur =
+          this.game.getScaledValue(20) * this.getGlowIntensity(0.7, 1.0);
+        ctx.strokeRect(button.x, button.y, button.width, button.height);
 
-    // Button text with shadow
-    ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
-    ctx.shadowBlur = this.game.getScaledValue(5);
-    ctx.shadowOffsetX = button.pressed ? 0 : this.game.getScaledValue(2);
-    ctx.shadowOffsetY = button.pressed ? 0 : this.game.getScaledValue(2);
+        // Inner highlight
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.lineWidth = this.game.getScaledValue(1);
+        ctx.strokeRect(
+          button.x + 2,
+          button.y + 2,
+          button.width - 4,
+          button.height - 4
+        );
+      }
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${this.game.getScaledValue(18)}px Courier New`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+      // Button text with shadow
+      ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+      ctx.shadowBlur = this.game.getScaledValue(5);
+      ctx.shadowOffsetX = button.pressed ? 0 : this.game.getScaledValue(2);
+      ctx.shadowOffsetY = button.pressed ? 0 : this.game.getScaledValue(2);
 
-    const textY = button.y + button.height / 2;
-    const textX = button.x + button.width / 2;
-    ctx.fillText("CONTINUE", textX, textY);
-
-    ctx.restore();
-  }
-
-
-  renderVideoButton(ctx) {
-    const button = this.videoButton;
-
-    ctx.save();
-
-    // Enhanced gradient background
-    const gradient = ctx.createLinearGradient(
-      button.x,
-      button.y,
-      button.x,
-      button.y + button.height
-    );
-
-    let color1, color2;
-    if (button.pressed) {
-      color1 = "#9B59B6";
-      color2 = "#7D3C98";
-    } else if (button.hovered) {
-      color1 = "#BB8FCE";
-      color2 = "#A569BD";
-    } else {
-      color1 = "#A569BD";
-      color2 = "#8E44AD";
-    }
-
-    gradient.addColorStop(0, color1);
-    gradient.addColorStop(1, color2);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(button.x, button.y, button.width, button.height);
-
-    // Enhanced border
-    ctx.strokeStyle = button.hovered ? "#D7BDE2" : "#8E44AD";
-    ctx.lineWidth = this.game.getScaledValue(3);
-    ctx.strokeRect(button.x, button.y, button.width, button.height);
-
-    // Glow effect when hovered
-    if (button.hovered) {
-      ctx.shadowColor = "#BB8FCE";
-      ctx.shadowBlur = this.game.getScaledValue(20) * this.getGlowIntensity(0.7, 1.0);
-      ctx.strokeRect(button.x, button.y, button.width, button.height);
-
-      // Inner highlight
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.lineWidth = this.game.getScaledValue(1);
-      ctx.strokeRect(
-        button.x + 2,
-        button.y + 2,
-        button.width - 4,
-        button.height - 4
-      );
-    }
-
-    // Button text with shadow
-    ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
-    ctx.shadowBlur = this.game.getScaledValue(5);
-    ctx.shadowOffsetX = button.pressed ? 0 : this.game.getScaledValue(2);
-    ctx.shadowOffsetY = button.pressed ? 0 : this.game.getScaledValue(2);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${this.game.getScaledValue(18)}px Courier New`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    const textY = button.y + button.height / 2;
-    const textX = button.x + button.width / 2;
-    ctx.fillText("WATCH VIDEO", textX, textY);
-
-    ctx.restore();
-  }
-
-  openVideoPlayer() {
-    this.game.audioManager.playSound("click", false, 0.5);
-    this.videoPlayerActive = true;
-
-    // Create video element
-    this.videoElement = document.createElement('video');
-    this.videoElement.src = 'videos/video-1.mp4';
-    this.videoElement.loop = true;
-    this.videoElement.autoplay = true;
-    this.videoElement.controls = false;
-    this.videoElement.style.display = 'none';
-    document.body.appendChild(this.videoElement);
-
-    console.log("🎥 Video player opened");
-  }
-
-  closeVideoPlayer() {
-    this.videoPlayerActive = false;
-
-    // Clean up video element
-    if (this.videoElement) {
-      this.videoElement.pause();
-      this.videoElement.remove();
-      this.videoElement = null;
-    }
-
-    console.log("🎥 Video player closed");
-  }
-
-  renderVideoPlayer(ctx) {
-    const canvasWidth = this.game.getCanvasWidth();
-    const canvasHeight = this.game.getCanvasHeight();
-
-    ctx.save();
-
-    // Dark overlay
-    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-    // Video container
-    const videoWidth = this.game.getScaledValue(640);
-    const videoHeight = this.game.getScaledValue(360);
-    const videoX = (canvasWidth - videoWidth) / 2;
-    const videoY = (canvasHeight - videoHeight) / 2;
-
-    // Container background
-    ctx.fillStyle = "rgba(20, 20, 20, 0.95)";
-    ctx.fillRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
-
-    // Border with glow
-    ctx.strokeStyle = "#BB8FCE";
-    ctx.lineWidth = this.game.getScaledValue(3);
-    ctx.shadowColor = "#BB8FCE";
-    ctx.shadowBlur = this.game.getScaledValue(15);
-    ctx.strokeRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
-
-    // Draw video frame if available
-    if (this.videoElement && this.videoElement.readyState >= 2) {
-      ctx.drawImage(this.videoElement, videoX, videoY, videoWidth, videoHeight);
-    } else {
-      // Loading text
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = `${this.game.getScaledValue(24)}px Courier New`;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${this.game.getScaledValue(18)}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("Loading video...", canvasWidth / 2, canvasHeight / 2);
-    }
 
-    // Close button hint
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-    ctx.font = `${this.game.getScaledValue(16)}px Courier New`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText("Press ESC or click outside to close", canvasWidth / 2, videoY + videoHeight + 30);
+      const textY = button.y + button.height / 2;
+      const textX = button.x + button.width / 2;
+      ctx.fillText("CONTINUE", textX, textY);
+    }
 
     ctx.restore();
   }
@@ -1134,10 +1124,20 @@ class LevelEndScreen extends Screen {
 
     // Semi-transparent background overlay
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-    ctx.fillRect(0, bannerY - this.game.getScaledValue(20), canvasWidth, bannerHeight + this.game.getScaledValue(40));
+    ctx.fillRect(
+      0,
+      bannerY - this.game.getScaledValue(20),
+      canvasWidth,
+      bannerHeight + this.game.getScaledValue(40)
+    );
 
     // Banner background
-    const gradient = ctx.createLinearGradient(0, bannerY, 0, bannerY + bannerHeight);
+    const gradient = ctx.createLinearGradient(
+      0,
+      bannerY,
+      0,
+      bannerY + bannerHeight
+    );
     gradient.addColorStop(0, "rgba(100, 150, 255, 0.9)");
     gradient.addColorStop(1, "rgba(75, 125, 230, 0.9)");
     ctx.fillStyle = gradient;
@@ -1157,28 +1157,52 @@ class LevelEndScreen extends Screen {
     ctx.shadowBlur = this.game.getScaledValue(10);
     ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
     ctx.fillStyle = "#FFD700";
-    ctx.font = `bold ${this.game.getScaledValue(48)}px Courier New`;
+    ctx.font = `bold ${this.game.getScaledValue(48)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText("NEW GAME+ UNLOCKED!", canvasWidth / 2, bannerY + this.game.getScaledValue(20));
+    ctx.fillText(
+      "NEW GAME+ UNLOCKED!",
+      canvasWidth / 2,
+      bannerY + this.game.getScaledValue(20)
+    );
 
     // Description
     ctx.shadowBlur = this.game.getScaledValue(5);
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-    ctx.font = `${this.game.getScaledValue(18)}px Courier New`;
-    ctx.fillText("You've completed all levels!", canvasWidth / 2, bannerY + this.game.getScaledValue(80));
+    ctx.font = `${this.game.getScaledValue(18)}px Arial`;
+    ctx.fillText(
+      "You've completed all levels!",
+      canvasWidth / 2,
+      bannerY + this.game.getScaledValue(80)
+    );
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.font = `${this.game.getScaledValue(16)}px Courier New`;
-    ctx.fillText("Replay any level with increased difficulty", canvasWidth / 2, bannerY + this.game.getScaledValue(110));
-    ctx.fillText("for higher speeds and tighter time limits!", canvasWidth / 2, bannerY + this.game.getScaledValue(135));
+    ctx.font = `${this.game.getScaledValue(16)}px Arial`;
+    ctx.fillText(
+      "Replay any level with increased difficulty",
+      canvasWidth / 2,
+      bannerY + this.game.getScaledValue(110)
+    );
+    ctx.fillText(
+      "for higher speeds and tighter time limits!",
+      canvasWidth / 2,
+      bannerY + this.game.getScaledValue(135)
+    );
 
     // Stars decoration
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#FFD700";
-    ctx.font = `${this.game.getScaledValue(32)}px Courier New`;
-    ctx.fillText("★", canvasWidth / 2 - this.game.getScaledValue(250), bannerY + this.game.getScaledValue(40));
-    ctx.fillText("★", canvasWidth / 2 + this.game.getScaledValue(250), bannerY + this.game.getScaledValue(40));
+    ctx.font = `${this.game.getScaledValue(32)}px Arial`;
+    ctx.fillText(
+      "★",
+      canvasWidth / 2 - this.game.getScaledValue(250),
+      bannerY + this.game.getScaledValue(40)
+    );
+    ctx.fillText(
+      "★",
+      canvasWidth / 2 + this.game.getScaledValue(250),
+      bannerY + this.game.getScaledValue(40)
+    );
 
     ctx.restore();
   }

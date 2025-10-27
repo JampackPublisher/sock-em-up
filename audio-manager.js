@@ -91,6 +91,22 @@ class AudioManager {
     }
   }
 
+  pauseMusic() {
+    if (this.currentMusic && !this.currentMusic.paused) {
+      console.log(`⏸️ Pausing music: ${this.currentMusicName}`);
+      this.currentMusic.pause();
+    }
+  }
+
+  resumeMusic() {
+    if (this.currentMusic && this.currentMusic.paused) {
+      console.log(`▶️ Resuming music: ${this.currentMusicName}`);
+      this.currentMusic.play().catch((e) => {
+        console.warn(`Music resume failed for ${this.currentMusicName}:`, e);
+      });
+    }
+  }
+
   fadeOutMusic(duration = 1000) {
     if (!this.currentMusic || this.isFading) return;
 
@@ -146,6 +162,27 @@ class AudioManager {
     sound.play().catch((e) => {
       console.warn(`Sound playback failed for ${soundName}:`, e);
     });
+  }
+
+  playRandomSound(soundPrefix, count, loop = false, volume = null) {
+    if (!this.enabled) return;
+
+    // Pick a random sound from the group (1 to count)
+    const randomIndex = Math.floor(Math.random() * count) + 1;
+    const soundName = `${soundPrefix}${randomIndex}`;
+
+    // Check if any sound from this group is currently playing
+    for (let i = 1; i <= count; i++) {
+      const checkSoundName = `${soundPrefix}${i}`;
+      const sound = this.sounds[checkSoundName];
+      if (sound && !sound.paused && !sound.ended) {
+        console.log(`🎵 Sound from ${soundPrefix} group already playing, skipping`);
+        return;
+      }
+    }
+
+    // Play the randomly selected sound
+    this.playSound(soundName, loop, volume);
   }
 
   stopSound(soundName) {

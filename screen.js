@@ -303,7 +303,7 @@ class Screen {
 
     // Button text
     ctx.fillStyle = enabled ? "white" : "#bdc3c7";
-    ctx.font = `bold ${this.layoutCache.bodyFontSize}px Courier New`;
+    ctx.font = `bold ${this.layoutCache.bodyFontSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x + width / 2, y + height / 2);
@@ -322,7 +322,7 @@ class Screen {
     const shadow = style.shadow !== false;
 
     ctx.fillStyle = color;
-    ctx.font = `${weight} ${fontSize}px Courier New`;
+    ctx.font = `${weight} ${fontSize}px Arial`;
     ctx.textAlign = align;
     ctx.textBaseline = baseline;
 

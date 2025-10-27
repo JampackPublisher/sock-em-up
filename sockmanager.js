@@ -292,8 +292,10 @@ class SockManager {
 
   createSockballAnimation(animation) {
     const sockballImage = GameConfig.IMAGES.SOCK_BALLS[animation.sockType - 1];
-    const targetX = this.game.getCanvasWidth() - this.game.getScaledValue(525);
-    const targetY = this.game.getCanvasHeight() - this.game.getScaledValue(125);
+
+    // Target the sockball counter on the top bar
+    const targetX = this.sockballTargetX || (this.game.getCanvasWidth() - this.game.getScaledValue(525));
+    const targetY = this.sockballTargetY || (this.game.getCanvasHeight() - this.game.getScaledValue(125));
 
     const sockballAnim = {
       image: sockballImage,
@@ -360,6 +362,18 @@ class SockManager {
         if (animation.progress >= 1) {
           this.game.sockBalls++;
           this.game.totalSockMatches++; // Track lifetime total matches
+          this.game.totalSockballsEarned++; // Track lifetime sockballs
+
+          // Check Sock Hoarder achievement (100 socks matched)
+          if (this.game.totalSockMatches >= 100) {
+            this.game.unlockAchievement("sock_hoarder");
+          }
+
+          // Check Martha's Millionaire achievement (2000 sockballs earned)
+          if (this.game.totalSockballsEarned >= 2000) {
+            this.game.unlockAchievement("marthas_millionaire");
+          }
+
           this.sockballAnimations.splice(index, 1);
           this.createArrivalEffect(animation.targetX, animation.targetY);
         }
@@ -462,7 +476,7 @@ class SockManager {
     }
 
     if (this.sockPile.pulseEffect > 0) {
-      scale = 1 + Math.sin(this.sockPile.pulseEffect * 0.3) * 0.1;
+      scale = 1.5 + Math.sin(this.sockPile.pulseEffect * 0.3) * 0.15;
     }
 
     const drawWidth = this.sockPile.width * scale;

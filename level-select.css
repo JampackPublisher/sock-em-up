@@ -52,7 +52,7 @@
   transform: translateX(-50%);
   text-align: center;
   color: rgba(255, 255, 255, 0.9);
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 18px;
   line-height: 1.4;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
@@ -88,7 +88,7 @@
 .level-selection-title {
   text-align: center;
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 24px;
   margin-bottom: 50px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
@@ -195,7 +195,7 @@
   left: 50%;
   transform: translateX(-50%);
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 16px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
@@ -206,7 +206,7 @@
   top: -30px;
   left: 50%;
   transform: translateX(-50%);
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 14px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
@@ -226,7 +226,7 @@
   left: 50%;
   transform: translateX(-50%);
   color: #90ee90;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 12px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
@@ -257,7 +257,7 @@
 
 .player-points {
   color: #ffd700;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 20px;
   text-align: center;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
@@ -272,7 +272,7 @@
   background: rgba(0, 0, 0, 0.6);
   border: 2px solid rgba(255, 215, 0, 0.3);
   color: white;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 14px;
   padding: 10px 20px;
   border-radius: 25px;
@@ -437,7 +437,7 @@
 .point-gain-animation {
   position: absolute;
   color: #ffd700;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
   font-size: 24px;
   font-weight: bold;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
@@ -516,12 +516,137 @@
   filter: drop-shadow(0 0 15px rgba(212, 175, 55, 0.4));
 }
 
+.company-logo-sprite {
+  width: 120px;
+  height: 158px;
+  margin: 0 auto 15px auto;
+  background-image: url("../images/company-logo-spritesheet.png");
+  background-size: 600% 600%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 15px rgba(212, 175, 55, 0.4));
+  animation: company-logo-anim 2s steps(1) infinite alternate;
+}
+
+@keyframes company-logo-anim {
+  0% {
+    background-position: 0% 0%;
+  }
+  2.78% {
+    background-position: 20% 0%;
+  }
+  5.56% {
+    background-position: 40% 0%;
+  }
+  8.33% {
+    background-position: 60% 0%;
+  }
+  11.11% {
+    background-position: 80% 0%;
+  }
+  13.89% {
+    background-position: 100% 0%;
+  }
+  16.67% {
+    background-position: 0% 20%;
+  }
+  19.44% {
+    background-position: 20% 20%;
+  }
+  22.22% {
+    background-position: 40% 20%;
+  }
+  25% {
+    background-position: 60% 20%;
+  }
+  27.78% {
+    background-position: 80% 20%;
+  }
+  30.56% {
+    background-position: 100% 20%;
+  }
+  33.33% {
+    background-position: 0% 40%;
+  }
+  36.11% {
+    background-position: 20% 40%;
+  }
+  38.89% {
+    background-position: 40% 40%;
+  }
+  41.67% {
+    background-position: 60% 40%;
+  }
+  44.44% {
+    background-position: 80% 40%;
+  }
+  47.22% {
+    background-position: 100% 40%;
+  }
+  50% {
+    background-position: 0% 60%;
+  }
+  52.78% {
+    background-position: 20% 60%;
+  }
+  55.56% {
+    background-position: 40% 60%;
+  }
+  58.33% {
+    background-position: 60% 60%;
+  }
+  61.11% {
+    background-position: 80% 60%;
+  }
+  63.89% {
+    background-position: 100% 60%;
+  }
+  66.67% {
+    background-position: 0% 80%;
+  }
+  69.44% {
+    background-position: 20% 80%;
+  }
+  72.22% {
+    background-position: 40% 80%;
+  }
+  75% {
+    background-position: 60% 80%;
+  }
+  77.78% {
+    background-position: 80% 80%;
+  }
+  80.56% {
+    background-position: 100% 80%;
+  }
+  83.33% {
+    background-position: 0% 100%;
+  }
+  86.11% {
+    background-position: 20% 100%;
+  }
+  88.89% {
+    background-position: 40% 100%;
+  }
+  91.67% {
+    background-position: 60% 100%;
+  }
+  94.44% {
+    background-position: 80% 100%;
+  }
+  97.22% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 100% 100%;
+  }
+}
+
 .credits-header h2 {
   color: #d4af37;
   font-size: 2em;
   margin-bottom: 10px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 .close-credits {
@@ -562,7 +687,7 @@
   letter-spacing: 1px;
   border-bottom: 1px solid rgba(212, 175, 55, 0.3);
   padding-bottom: 5px;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 .company-info h3:first-child {
@@ -574,7 +699,7 @@
   line-height: 1.6;
   margin-bottom: 15px;
   font-size: 0.95em;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 .team-credits {
@@ -601,14 +726,14 @@
   font-weight: bold;
   font-size: 0.9em;
   width: 100%;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 .credit-role .name {
   color: #e0e0e0;
   font-size: 0.9em;
   font-style: italic;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 .company-tagline {
@@ -624,7 +749,7 @@
   color: #d4af37;
   font-size: 1.1em;
   font-weight: bold;
-  font-family: "Courier New", monospace;
+  font-family: "Arial", monospace;
 }
 
 @media (max-width: 1200px) {
@@ -701,6 +826,11 @@
     max-width: 100px;
   }
 
+  .company-logo-sprite {
+    width: 100px;
+    height: 132px;
+  }
+
   .credits-header h2 {
     font-size: 1.6em;
   }
@@ -751,6 +881,11 @@
 
   .company-logo {
     max-width: 80px;
+  }
+
+  .company-logo-sprite {
+    width: 80px;
+    height: 105px;
   }
 
   .credits-header h2 {

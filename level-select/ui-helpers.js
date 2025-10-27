@@ -37,7 +37,7 @@ class UIHelpers {
     } = options;
 
     ctx.save();
-    ctx.font = `${weight} ${fontSize}px Courier New`;
+    ctx.font = `${weight} ${fontSize}px Arial`;
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = baseline;
@@ -111,7 +111,12 @@ class UIHelpers {
     ctx.save();
 
     // Gradient
-    const gradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + height);
+    const gradient = ctx.createLinearGradient(
+      buttonX,
+      buttonY,
+      buttonX,
+      buttonY + height
+    );
     if (hovered) {
       gradient.addColorStop(0, hoverColor1);
       gradient.addColorStop(1, hoverColor2);
@@ -164,7 +169,7 @@ class UIHelpers {
    * Word-wrap text to fit within a maximum width
    */
   wrapText(ctx, text, maxWidth, fontSize) {
-    ctx.font = `${fontSize}px Courier New`;
+    ctx.font = `${fontSize}px Arial`;
     const words = text.split(" ");
     const lines = [];
     let currentLine = "";
