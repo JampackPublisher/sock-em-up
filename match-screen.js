@@ -141,8 +141,6 @@ class MatchScreen extends Screen {
     this.matchStartTime = Date.now();
     this.levelCompleted = false; // Track if level is completed to stop timer
 
-    // Start match music
-    console.log("🎵 Match screen setup - starting match music");
     this.game.audioManager.playMusic("match-music", true, 0.3);
   }
 
@@ -155,10 +153,9 @@ class MatchScreen extends Screen {
     // Reset canvas transform in case shake is still active
     if (this.game.canvas) {
       this.game.canvas.style.transform = "";
+      this.game.canvas.className = ""; // Reset cursor to default
     }
 
-    // Stop match music when leaving match screen
-    console.log("🎵 Match screen cleanup - stopping match music");
     this.game.audioManager.stopMusic();
   }
 
@@ -516,6 +513,32 @@ class MatchScreen extends Screen {
     }
 
     this.updateHoverEffects(x, y);
+
+    // Update cursor based on what's being hovered
+    this.updateCursor(x, y);
+  }
+
+  updateCursor(x, y) {
+    // Check if hovering over buttons
+    const isButtonHovered = this.pauseButton.hovered || this.exitButton.hovered;
+
+    // Check if hovering over sock pile
+    const isSockPileHovered = this.sockPileHover;
+
+    // Check if hovering over a sock
+    const isSockHovered =
+      !this.isDragging && this.sockManager.getSockAt(x, y) !== null;
+
+    // Set cursor based on what's being hovered/interacted with
+    if (this.isDragging) {
+      this.game.canvas.style.cursor = "grabbing";
+    } else if (isSockHovered) {
+      this.game.canvas.style.cursor = "grab";
+    } else if (isButtonHovered || isSockPileHovered) {
+      this.game.canvas.style.cursor = "pointer";
+    } else {
+      this.game.canvas.style.cursor = "default";
+    }
   }
 
   calculateThrowVelocity() {
@@ -645,16 +668,33 @@ class MatchScreen extends Screen {
 
   checkForMatches() {
     const currentTime = Date.now();
+    console.log(
+      "🔍 checkForMatches called, DROP_TARGET_PAIRS:",
+      GameConfig.DROP_TARGET_PAIRS
+    );
 
     for (let pairId = 0; pairId < GameConfig.DROP_TARGET_PAIRS; pairId++) {
       const pairZones = this.dropZones.filter((zone) => zone.pairId === pairId);
+      console.log(
+        `  Pair ${pairId}: ${pairZones.length} zones, sock1:`,
+        pairZones[0]?.sock,
+        "sock2:",
+        pairZones[1]?.sock
+      );
 
       if (pairZones.length === 2 && pairZones[0].sock && pairZones[1].sock) {
+        console.log(
+          `  ✓ Both zones have socks, types: ${pairZones[0].sock.type} vs ${pairZones[1].sock.type}`
+        );
         if (pairZones[0].sock.type === pairZones[1].sock.type) {
           // MATCH - track the sock type for sockball creation
           const matchedSockType = pairZones[0].sock.type;
+          console.log(`  ✅ MATCH DETECTED! Type: ${matchedSockType}`);
 
           // Add this sockball type to the game's sockball queue
+          console.log(
+            `  📦 About to call addSockballToQueue(${matchedSockType})`
+          );
           this.game.addSockballToQueue(matchedSockType);
 
           // Play match sound
@@ -707,10 +747,20 @@ class MatchScreen extends Screen {
           this.createScreenShake();
 
           // Check if we've completed the required number of matches (stop timer immediately)
-          // Count BOTH animated sockballs AND queued sockballs
+          // Count: queued (waiting for animation) + animating + completed
+          // Queue is now properly managed - items removed when animation starts
           const level = GameConfig.LEVELS[this.game.currentLevel];
+          const completedSockballs = this.game.sockBalls;
+          const queuedSockballs = this.game.getSockballQueueLength();
+          const animatingSockballs =
+            this.sockManager.getAnimatingSockballsCount();
           const totalSockballs =
-            this.game.sockBalls + this.game.getSockballQueueLength();
+            completedSockballs + queuedSockballs + animatingSockballs;
+
+          console.log(
+            `🔍 Sockball count - Completed: ${completedSockballs}, Queued: ${queuedSockballs}, Animating: ${animatingSockballs}, Total: ${totalSockballs}/${level.sockPairs}`
+          );
+
           if (level && totalSockballs >= level.sockPairs) {
             // Mark level as completed to stop the timer
             if (!this.levelCompleted) {
@@ -922,9 +972,11 @@ class MatchScreen extends Screen {
       this.renderDraggedSock(ctx);
     }
 
-    this.sockManager.renderSockballAnimations(ctx);
     this.sockManager.renderParticleEffects(ctx);
     this.renderMatchScreenUI(ctx);
+
+    // Render sockball animations AFTER the top bar so they appear above it
+    this.sockManager.renderSockballAnimations(ctx);
 
     // Render feedback manager for achievement toasts
     this.game.feedbackManager.render(ctx);
@@ -987,52 +1039,6 @@ class MatchScreen extends Screen {
         ctx.setLineDash([]); // Solid line
         this.roundRect(ctx, minX, minY, width, height, cornerRadius);
         ctx.stroke();
-
-        // Draw pair number badge BELOW the zone (centered)
-        const badgeWidth = this.game.getScaledValue(50);
-        const badgeHeight = this.game.getScaledValue(35);
-        const badgeY = maxY + this.game.getScaledValue(15);
-        const badgeCornerRadius = this.game.getScaledValue(8);
-
-        // Badge solid background
-        ctx.fillStyle = colors.border;
-        this.roundRect(
-          ctx,
-          centerX - badgeWidth / 2,
-          badgeY,
-          badgeWidth,
-          badgeHeight,
-          badgeCornerRadius
-        );
-        ctx.fill();
-
-        // Badge border for extra definition
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-        ctx.lineWidth = this.game.getScaledValue(2);
-        this.roundRect(
-          ctx,
-          centerX - badgeWidth / 2,
-          badgeY,
-          badgeWidth,
-          badgeHeight,
-          badgeCornerRadius
-        );
-        ctx.stroke();
-
-        // Badge number
-        this.renderText(
-          ctx,
-          `${pairId + 1}`,
-          centerX,
-          badgeY + badgeHeight / 2,
-          {
-            fontSize: layout.headerFontSize,
-            color: "rgba(255, 255, 255, 0.95)",
-            align: "center",
-            baseline: "middle",
-            weight: "bold",
-          }
-        );
 
         ctx.restore();
       }
@@ -1328,17 +1334,19 @@ class MatchScreen extends Screen {
     });
 
     // Draw fire icon to the right of the text
-    const iconSize = layout.bodyFontSize * 1.2;
+    const iconWidth = layout.bodyFontSize * 1.2;
     ctx.font = `bold ${layout.bodyFontSize}px "Press Start 2P", monospace`;
     const textWidth = ctx.measureText(streakText).width;
     const iconX = layout.streakX + textWidth / 2 + 5;
     if (this.game.images[fireIcon]) {
+      const fireImage = this.game.images[fireIcon];
+      const iconHeight = iconWidth * (fireImage.height / fireImage.width);
       ctx.drawImage(
-        this.game.images[fireIcon],
+        fireImage,
         iconX,
-        layout.streakY - iconSize / 2,
-        iconSize,
-        iconSize
+        layout.streakY - iconHeight / 2,
+        iconWidth,
+        iconHeight
       );
     }
 

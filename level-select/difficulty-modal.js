@@ -113,6 +113,10 @@ class DifficultyModal {
         break;
       }
     }
+
+    // Update cursor
+    this.game.canvas.style.cursor =
+      this.hoveredDifficulty !== -1 ? "pointer" : "default";
   }
 
   /**

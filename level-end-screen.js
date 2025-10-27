@@ -69,17 +69,17 @@ class LevelEndScreen extends Screen {
       containerX: canvasWidth / 2 - this.game.getScaledValue(300),
       containerY: canvasHeight / 2 - this.game.getScaledValue(275),
       titleY: canvasHeight / 2 - this.game.getScaledValue(200),
-      marthaImageY: canvasHeight / 2 - this.game.getScaledValue(130),
+      marthaImageY: canvasHeight / 2 - this.game.getScaledValue(160), // Moved up by 30
       marthaImageSize: marthaImageSize,
       scoreStartY:
         canvasHeight / 2 -
-        this.game.getScaledValue(130) +
+        this.game.getScaledValue(160) + // Adjusted to match new marthaImageY
         marthaImageSize +
         marthaToStatsMargin,
       scoreLineHeight: this.game.getScaledValue(35),
       buttonWidth: this.game.getScaledValue(200),
       buttonHeight: this.game.getScaledValue(50),
-      buttonY: canvasHeight / 2 + this.game.getScaledValue(240),
+      buttonY: canvasHeight / 2 + this.game.getScaledValue(270), // Moved down by 30
     };
   }
 
@@ -159,18 +159,12 @@ class LevelEndScreen extends Screen {
     this.initializeParticles();
     this.titleBounceTimer = 0;
     this.marthaScaleTimer = 0;
-
-    console.log(
-      "🎵 Level end screen setup - no music started here (handled by throwing screen)"
-    );
   }
 
   cleanup() {
     super.cleanup();
 
-    // Level end screen doesn't start its own music, so no cleanup needed
-    // The throwing screen handles the victory/defeat music
-    console.log("🎵 Level end screen cleanup - no music cleanup needed");
+    this.game.audioManager.stopMusic();
   }
 
   calculateScoresAndRent() {
@@ -491,6 +485,9 @@ class LevelEndScreen extends Screen {
     const b = this.continueButton;
     b.hovered =
       x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+
+    // Update cursor
+    this.game.canvas.style.cursor = b.hovered ? "pointer" : "default";
   }
 
   onMouseDown(x, y) {

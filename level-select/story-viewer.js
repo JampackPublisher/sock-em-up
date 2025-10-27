@@ -302,6 +302,13 @@ class StoryViewer {
       this.navButtons.next.hovered = false;
     }
 
+    // Update cursor
+    const anyButtonHovered =
+      this.navButtons.close.hovered ||
+      this.navButtons.previous.hovered ||
+      this.navButtons.next.hovered;
+    this.game.canvas.style.cursor = anyButtonHovered ? "pointer" : "default";
+
     return true;
   }
 

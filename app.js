@@ -26,6 +26,8 @@ class SockGame {
     this.totalSockballsEarned = 0; // Lifetime sockballs earned (for Martha's Millionaire)
     this.totalMoneySpent = 0; // Total money spent unlocking levels (for Big Spender)
     this.levelsPlayed = 0; // Total levels played including replays (for Veteran Tenant)
+    this.totalWallBounceCatches = 0; // Lifetime wall bounce catches (for Pinball King)
+    this.totalBonusHits = 0; // Lifetime bonus hits (for Bonus Master)
     this.consecutivePerfectThrows = 0; // Current streak of perfect throws (for Sock Sniper)
     this.consecutiveMisses = 0; // Current streak of misses (for Butterfingers)
     this.easterEggSockballsCreated = 0; // Sockballs created via easter egg this level (for Sockball Wizard)
@@ -258,26 +260,18 @@ class SockGame {
     return this.sockballQueue.length;
   }
 
-  // Game state management with proper audio handling
   changeGameState(newState) {
     if (this.gameState === newState) return;
 
-    console.log(`🎮 Game state changing from ${this.gameState} to ${newState}`);
-
-    // Clean up current screen
     this.cleanupCurrentScreen();
 
-    // Update states
     this.previousGameState = this.gameState;
     this.gameState = newState;
 
-    // Setup new screen
     this.setupCurrentScreen();
   }
 
   cleanupCurrentScreen() {
-    console.log(`🧹 Cleaning up screen: ${this.gameState}`);
-
     if (this.gameState === "menu") {
       this.levelSelect.cleanup();
     } else if (this.gameState === "matching") {
@@ -290,8 +284,6 @@ class SockGame {
   }
 
   setupCurrentScreen() {
-    console.log(`🎬 Setting up screen: ${this.gameState}`);
-
     if (this.gameState === "menu") {
       this.levelSelect.setup();
     } else if (this.gameState === "matching") {
@@ -317,26 +309,19 @@ class SockGame {
   }
 
   loadImagesFromCache() {
-    // Get images from the loading screen cache
     if (
       window.loadingScreenManager &&
       window.loadingScreenManager.getImageCache()
     ) {
       const imageCache = window.loadingScreenManager.getImageCache();
 
-      // Copy all cached images to the game's image object
       imageCache.forEach((image, imageName) => {
         this.images[imageName] = image;
       });
 
       this.loadedImages = imageCache.size;
       this.totalImages = imageCache.size;
-
-      console.log(`Loaded ${this.loadedImages} images from cache`);
     } else {
-      console.warn(
-        "Loading screen manager not available, falling back to direct loading"
-      );
       this.loadImages();
     }
   }
@@ -348,26 +333,16 @@ class SockGame {
       ...GameConfig.IMAGES.SOCK_PILES,
       ...GameConfig.IMAGES.CHARACTERS,
       ...GameConfig.IMAGES.UI,
-      GameConfig.MARTHA_SPRITESHEET.filename, // Add Martha's spritesheet
+      GameConfig.MARTHA_SPRITESHEET.filename,
     ];
 
     this.totalImages = allImages.length;
-
-    console.log("Loading images:", allImages);
-    console.log(
-      "Martha spritesheet filename:",
-      GameConfig.MARTHA_SPRITESHEET.filename
-    );
 
     allImages.forEach((imageName) => {
       const img = new Image();
       img.onload = () => {
         this.loadedImages++;
         if (imageName === GameConfig.MARTHA_SPRITESHEET.filename) {
-          console.log("Martha spritesheet loaded successfully!", {
-            width: img.naturalWidth,
-            height: img.naturalHeight,
-          });
         }
       };
       img.onerror = (e) => {
@@ -387,10 +362,8 @@ class SockGame {
     this.canvas.addEventListener("wheel", this.handleWheel, { passive: false });
     window.addEventListener("resize", this.handleResize);
 
-    // Phase 1.3 - Keyboard listener for pause (P or ESC)
     window.addEventListener("keydown", this.handleKeyDown);
 
-    // Phase 2.3 - Touch event listeners for tablet support
     this.canvas.addEventListener("touchstart", this.handleTouchStart, {
       passive: false,
     });
@@ -419,17 +392,14 @@ class SockGame {
     this.canvas.removeEventListener("touchcancel", this.handleTouchCancel);
   }
 
-  // Phase 2.3 - Touch event handlers
   handleTouchStart(e) {
     e.preventDefault(); // Prevent default touch behavior
 
     if (e.touches.length > 0) {
       const touch = e.touches[0];
 
-      // Track the game state when touch down occurs
       this.mouseDownState = this.gameState;
 
-      // Pass touch coordinates directly - handleMouseDown will convert them
       this.handleMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
     }
   }
@@ -448,12 +418,9 @@ class SockGame {
   handleTouchEnd(e) {
     e.preventDefault();
 
-    // Get the last touch position from changedTouches
     if (e.changedTouches.length > 0) {
       const touch = e.changedTouches[0];
 
-      // Pass touch coordinates directly - handlers will convert them
-      // Only call mouseup and click - handleClick now has cross-screen protection
       this.handleMouseUp({ clientX: touch.clientX, clientY: touch.clientY });
       this.handleClick({ clientX: touch.clientX, clientY: touch.clientY });
     }
@@ -462,7 +429,6 @@ class SockGame {
   handleTouchCancel(e) {
     e.preventDefault();
 
-    // Reset any dragging state when touch is cancelled
     if (this.gameState === "matching" && this.matchScreen) {
       this.matchScreen.isDragging = false;
       this.matchScreen.draggedSock = null;
@@ -470,13 +436,9 @@ class SockGame {
 
     // Reset mousedown state
     this.mouseDownState = null;
-
-    console.log("🚫 Touch cancelled - resetting drag state");
   }
 
-  // Phase 1.3 - Handle keyboard input
   handleKeyDown(e) {
-    // Route keyboard events to current screen if it has a handler
     const currentScreen = this.getCurrentScreen();
     if (currentScreen && typeof currentScreen.handleKeyDown === "function") {
       currentScreen.handleKeyDown(e);
@@ -486,7 +448,6 @@ class SockGame {
       }
     }
 
-    // Pause/Resume with P or ESC key (for gameplay screens)
     if (e.key === "p" || e.key === "P" || e.key === "Escape") {
       if (this.gameState === "matching" || this.gameState === "throwing") {
         const currentScreen =
@@ -549,7 +510,6 @@ class SockGame {
     }
   }
 
-  // Phase 1.2 - Initialize achievements from config
   initializeAchievements() {
     const achievements = {};
     for (const key in GameConfig.ACHIEVEMENTS) {
@@ -574,11 +534,11 @@ class SockGame {
       this.totalSockballsEarned = data.totalSockballsEarned || 0;
       this.totalMoneySpent = data.totalMoneySpent || 0;
       this.levelsPlayed = data.levelsPlayed || 0;
+      this.totalWallBounceCatches = data.totalWallBounceCatches || 0;
+      this.totalBonusHits = data.totalBonusHits || 0;
       this.logoClickCount = data.logoClickCount || 0;
       this.easterEggSockballsCreated = data.easterEggSockballsCreated || 0;
 
-      // NEW GAME+: Load per-difficulty progress
-      // Always default to Base Game (difficulty 0) on page load
       this.selectedDifficulty = 0;
       this.highestUnlockedDifficulty = data.highestUnlockedDifficulty || 0;
 
@@ -620,11 +580,9 @@ class SockGame {
         }
       }
 
-      // Set legacy arrays to point to Base Game (difficulty 0) on load
       this.unlockedLevels = this.unlockedLevelsByDifficulty[0];
       this.completedLevels = this.completedLevelsByDifficulty[0];
 
-      // Phase 1.2 - Load enhanced save data
       this.currentDifficulty = data.currentDifficulty || 0;
       this.tutorialCompleted = data.tutorialCompleted || false;
       this.storyViewed = data.storyViewed || false;
@@ -637,13 +595,10 @@ class SockGame {
       // Story panels
       this.unlockedStoryPanels =
         data.unlockedStoryPanels || Array(9).fill(false);
-      this.viewedStoryPanels =
-        data.viewedStoryPanels || Array(9).fill(false);
+      this.viewedStoryPanels = data.viewedStoryPanels || Array(9).fill(false);
 
-      // NEW GAME+ banner tracking
       this.hasShownNewGamePlusBanner = data.hasShownNewGamePlusBanner || false;
 
-      // Unlock story panels for already-completed levels on base difficulty
       const baseLevels = this.completedLevelsByDifficulty[0] || [];
       for (let i = 0; i < baseLevels.length; i++) {
         if (baseLevels[i] && !this.unlockedStoryPanels[i]) {
@@ -651,7 +606,6 @@ class SockGame {
         }
       }
 
-      // Load achievements (merge with defaults for new achievements)
       if (data.achievements) {
         this.achievements = this.initializeAchievements();
         for (const id in data.achievements) {
@@ -674,12 +628,7 @@ class SockGame {
           };
         }
       }
-
-      console.log(
-        `💾 Loaded game data - Selected difficulty: ${this.selectedDifficulty}, Highest unlocked: ${this.highestUnlockedDifficulty}`
-      );
     } else {
-      // No saved data - unlock story panels for any initially completed levels
       const baseLevels = this.completedLevelsByDifficulty[0] || [];
       for (let i = 0; i < baseLevels.length; i++) {
         if (baseLevels[i] && !this.unlockedStoryPanels[i]) {
@@ -698,6 +647,8 @@ class SockGame {
       totalSockballsEarned: this.totalSockballsEarned,
       totalMoneySpent: this.totalMoneySpent,
       levelsPlayed: this.levelsPlayed,
+      totalWallBounceCatches: this.totalWallBounceCatches,
+      totalBonusHits: this.totalBonusHits,
       logoClickCount: this.logoClickCount,
       easterEggSockballsCreated: this.easterEggSockballsCreated,
       // NEW GAME+: Save per-difficulty progress
@@ -721,14 +672,9 @@ class SockGame {
       viewedStoryPanels: this.viewedStoryPanels,
     };
     localStorage.setItem("sockGameData", JSON.stringify(data));
-    console.log(
-      `💾 Saved game data - Selected difficulty: ${this.selectedDifficulty}`
-    );
   }
 
-  // Phase 3.3 - Mark level as completed at current difficulty
   markLevelCompleted(levelIndex, difficulty) {
-    // Initialize difficulty array if it doesn't exist
     if (!this.completedLevelsByDifficulty[difficulty]) {
       this.completedLevelsByDifficulty[difficulty] = Array(
         GameConfig.LEVELS.length

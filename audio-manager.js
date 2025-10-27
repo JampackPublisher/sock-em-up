@@ -18,20 +18,16 @@ class AudioManager {
       },
       { once: true }
     );
-
-    console.log("🎵 AudioManager initialized");
   }
 
   enable() {
     this.enabled = true;
-    console.log("🔊 AudioManager enabled");
   }
 
   preloadAudio(name, src) {
     if (!this.sounds[name]) {
       this.sounds[name] = new Audio(src);
       this.sounds[name].preload = "auto";
-      console.log(`🎵 Preloaded audio: ${name}`);
     }
   }
 
@@ -40,8 +36,6 @@ class AudioManager {
 
     const actualVolume = volume !== null ? volume : this.musicVolume;
     const audioPath = `audio/${musicName}.mp3`;
-
-    console.log(`🎵 Playing music: ${musicName}`);
 
     // Stop current music if different
     if (this.currentMusic && this.currentMusicName !== musicName) {
@@ -55,7 +49,6 @@ class AudioManager {
       !this.currentMusic.paused &&
       !this.currentMusic.ended
     ) {
-      console.log(`🎵 Music ${musicName} already playing, skipping restart`);
       return;
     }
 
@@ -76,7 +69,6 @@ class AudioManager {
 
   stopMusic() {
     if (this.currentMusic) {
-      console.log(`🔇 Stopping music: ${this.currentMusicName}`);
       this.currentMusic.pause();
       this.currentMusic.currentTime = 0;
       this.currentMusic = null;
@@ -116,7 +108,6 @@ class AudioManager {
       this.fadeInterval = null;
     }
 
-    console.log(`🔇 Fading out music: ${this.currentMusicName}`);
     this.isFading = true;
 
     const startVolume = this.currentMusic.volume;
@@ -149,8 +140,6 @@ class AudioManager {
     const actualVolume = volume !== null ? volume : this.sfxVolume;
     const audioPath = `audio/${soundName}.mp3`;
 
-    console.log(`🎵 Playing sound: ${soundName}`);
-
     // Preload if not already loaded
     this.preloadAudio(soundName, audioPath);
 
@@ -176,7 +165,6 @@ class AudioManager {
       const checkSoundName = `${soundPrefix}${i}`;
       const sound = this.sounds[checkSoundName];
       if (sound && !sound.paused && !sound.ended) {
-        console.log(`🎵 Sound from ${soundPrefix} group already playing, skipping`);
         return;
       }
     }
@@ -188,7 +176,6 @@ class AudioManager {
   stopSound(soundName) {
     if (!this.enabled || !this.sounds[soundName]) return;
 
-    console.log(`🔇 Stopped sound: ${soundName}`);
     this.sounds[soundName].pause();
     this.sounds[soundName].currentTime = 0;
   }
@@ -226,7 +213,7 @@ class AudioManager {
       const audio = this.sounds[soundName];
       audio.pause();
       audio.currentTime = 0;
-      audio.src = ''; // Release audio source
+      audio.src = ""; // Release audio source
     });
 
     this.sounds = {};

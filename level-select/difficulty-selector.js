@@ -52,12 +52,6 @@ class DifficultySelector {
 
     // Check if all 9 levels are completed
     const allCompleted = levels.every((completed) => completed === true);
-    console.log(
-      `⭐ Difficulty ${difficulty} completion check:`,
-      levels,
-      "All completed:",
-      allCompleted
-    );
     return allCompleted;
   }
 
@@ -144,6 +138,13 @@ class DifficultySelector {
         `✅ Switched to difficulty: ${this.getDifficultyName(difficulty)}`
       );
     }
+  }
+
+  /**
+   * Check if button or dropdown is hovered
+   */
+  isButtonHovered() {
+    return this.button.hovered || (this.isOpen && this.hoveredOption !== -1);
   }
 
   /**
@@ -292,13 +293,7 @@ class DifficultySelector {
         ctx.globalAlpha = 0.9;
       }
 
-      ctx.drawImage(
-        buttonImage,
-        drawX,
-        drawY,
-        drawWidth,
-        drawHeight
-      );
+      ctx.drawImage(buttonImage, drawX, drawY, drawWidth, drawHeight);
 
       // Reset effects
       ctx.shadowBlur = 0;

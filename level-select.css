@@ -520,7 +520,7 @@
   width: 120px;
   height: 158px;
   margin: 0 auto 15px auto;
-  background-image: url("../images/company-logo-spritesheet.png");
+  background-image: url("images/company-logo-spritesheet.png");
   background-size: 600% 600%;
   background-repeat: no-repeat;
   filter: drop-shadow(0 0 15px rgba(212, 175, 55, 0.4));

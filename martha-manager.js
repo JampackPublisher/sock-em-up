@@ -89,6 +89,10 @@ class MarthaManager {
     this.hasPlayedAngrySound = false;
     this.hasPlayedLaughSound = false;
     this.hasPlayedRentCollectedSound = false;
+
+    // Pattern repetition tracking
+    this.patternHistory = [];
+    this.maxConsecutivePatterns = 2;
   }
 
   setup(level) {
@@ -147,6 +151,9 @@ class MarthaManager {
     this.hasPlayedAngrySound = false;
     this.hasPlayedLaughSound = false;
     this.hasPlayedRentCollectedSound = false;
+
+    // Reset pattern history
+    this.patternHistory = [];
 
     // Initialize first pattern
     this.switchPattern();
@@ -322,6 +329,27 @@ class MarthaManager {
       case "random":
         this.updateRandomPattern(timeMultiplier);
         break;
+      case "figure-eight":
+        this.updateFigureEightPattern(timeMultiplier);
+        break;
+      case "zigzag-horizontal":
+        this.updateZigzagHorizontalPattern(timeMultiplier);
+        break;
+      case "zigzag-vertical":
+        this.updateZigzagVerticalPattern(timeMultiplier);
+        break;
+      case "spiral":
+        this.updateSpiralPattern(timeMultiplier);
+        break;
+      case "bounce":
+        this.updateBouncePattern(timeMultiplier);
+        break;
+      case "square":
+        this.updateSquarePattern(timeMultiplier);
+        break;
+      case "wave":
+        this.updateWavePattern(timeMultiplier);
+        break;
     }
   }
 
@@ -443,6 +471,197 @@ class MarthaManager {
     this.facingRight = this.velocity.x > 0;
   }
 
+  updateFigureEightPattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.FIGURE_EIGHT.baseSpeed;
+
+    if (!this.patternData.figureEightAngle && this.patternData.figureEightAngle !== 0) {
+      this.patternData.figureEightAngle = 0;
+      this.patternData.centerX = this.bounds.left + (this.bounds.right - this.bounds.left) / 2;
+      this.patternData.centerY = this.bounds.top + (this.bounds.bottom - this.bounds.top) / 2;
+      this.patternData.radiusX = Math.min((this.bounds.right - this.bounds.left) / 4, 200);
+      this.patternData.radiusY = Math.min((this.bounds.bottom - this.bounds.top) / 4, 150);
+    }
+
+    this.patternData.figureEightAngle += baseSpeed * this.patternSpeed * timeMultiplier * 0.02;
+
+    // Figure-8 uses parametric equations: x = sin(t), y = sin(2t)/2
+    const t = this.patternData.figureEightAngle;
+    const targetX = this.patternData.centerX + Math.sin(t) * this.patternData.radiusX;
+    const targetY = this.patternData.centerY + (Math.sin(2 * t) / 2) * this.patternData.radiusY;
+
+    this.velocity.x = (targetX - this.x) * 0.15;
+    this.velocity.y = (targetY - this.y) * 0.15;
+
+    this.facingRight = this.velocity.x > 0;
+  }
+
+  updateZigzagHorizontalPattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.ZIGZAG_HORIZONTAL.baseSpeed;
+
+    if (!this.patternData.zigzagPhase && this.patternData.zigzagPhase !== 0) {
+      this.patternData.zigzagPhase = 0;
+      this.patternData.zigzagAmplitude = Math.min((this.bounds.bottom - this.bounds.top) / 3, 100);
+    }
+
+    // Move horizontally with vertical zigzag
+    this.velocity.x = this.direction * baseSpeed * this.patternSpeed * timeMultiplier;
+
+    this.patternData.zigzagPhase += baseSpeed * this.patternSpeed * timeMultiplier * 0.1;
+    const zigzagY = Math.sin(this.patternData.zigzagPhase) * this.patternData.zigzagAmplitude * 0.05;
+    this.velocity.y = zigzagY;
+
+    this.facingRight = this.direction > 0;
+  }
+
+  updateZigzagVerticalPattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.ZIGZAG_VERTICAL.baseSpeed;
+
+    if (!this.patternData.zigzagPhase && this.patternData.zigzagPhase !== 0) {
+      this.patternData.zigzagPhase = 0;
+      this.patternData.zigzagAmplitude = Math.min((this.bounds.right - this.bounds.left) / 3, 100);
+    }
+
+    // Move vertically with horizontal zigzag
+    this.velocity.y = this.direction * baseSpeed * this.patternSpeed * timeMultiplier;
+
+    this.patternData.zigzagPhase += baseSpeed * this.patternSpeed * timeMultiplier * 0.1;
+    const zigzagX = Math.sin(this.patternData.zigzagPhase) * this.patternData.zigzagAmplitude * 0.05;
+    this.velocity.x = zigzagX;
+
+    this.facingRight = this.velocity.x > 0;
+  }
+
+  updateSpiralPattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.SPIRAL.baseSpeed;
+
+    if (!this.patternData.spiralAngle && this.patternData.spiralAngle !== 0) {
+      this.patternData.spiralAngle = 0;
+      this.patternData.centerX = this.bounds.left + (this.bounds.right - this.bounds.left) / 2;
+      this.patternData.centerY = this.bounds.top + (this.bounds.bottom - this.bounds.top) / 2;
+      this.patternData.spiralRadius = 50;
+      this.patternData.spiralDirection = this.direction; // 1 for outward, -1 for inward
+      this.patternData.maxRadius = Math.min(
+        (this.bounds.right - this.bounds.left) / 3,
+        (this.bounds.bottom - this.bounds.top) / 3
+      );
+    }
+
+    this.patternData.spiralAngle += baseSpeed * this.patternSpeed * timeMultiplier * 0.03;
+
+    // Expand or contract the spiral
+    this.patternData.spiralRadius += this.patternData.spiralDirection * baseSpeed * this.patternSpeed * timeMultiplier * 0.5;
+
+    // Reverse direction when hitting limits
+    if (this.patternData.spiralRadius > this.patternData.maxRadius) {
+      this.patternData.spiralRadius = this.patternData.maxRadius;
+      this.patternData.spiralDirection = -1;
+    } else if (this.patternData.spiralRadius < 50) {
+      this.patternData.spiralRadius = 50;
+      this.patternData.spiralDirection = 1;
+    }
+
+    const targetX = this.patternData.centerX + Math.cos(this.patternData.spiralAngle) * this.patternData.spiralRadius;
+    const targetY = this.patternData.centerY + Math.sin(this.patternData.spiralAngle) * this.patternData.spiralRadius;
+
+    this.velocity.x = (targetX - this.x) * 0.15;
+    this.velocity.y = (targetY - this.y) * 0.15;
+
+    this.facingRight = this.velocity.x > 0;
+  }
+
+  updateBouncePattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.BOUNCE.baseSpeed;
+
+    if (!this.patternData.bounceDirection) {
+      // Random initial direction
+      const angle = Math.random() * Math.PI * 2;
+      this.patternData.bounceDirection = {
+        x: Math.cos(angle),
+        y: Math.sin(angle)
+      };
+    }
+
+    this.velocity.x = this.patternData.bounceDirection.x * baseSpeed * this.patternSpeed * timeMultiplier;
+    this.velocity.y = this.patternData.bounceDirection.y * baseSpeed * this.patternSpeed * timeMultiplier;
+
+    // Note: Actual bouncing is handled in applyMovement() boundary checking
+    this.facingRight = this.velocity.x > 0;
+  }
+
+  updateSquarePattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.SQUARE.baseSpeed;
+
+    if (!this.patternData.squareSide && this.patternData.squareSide !== 0) {
+      this.patternData.squareSide = 0; // 0=right, 1=down, 2=left, 3=up
+      this.patternData.squareProgress = 0;
+      this.patternData.squareSize = Math.min(
+        (this.bounds.right - this.bounds.left) / 2,
+        (this.bounds.bottom - this.bounds.top) / 2
+      );
+      this.patternData.squareSpeed = 2;
+    }
+
+    this.patternData.squareProgress += baseSpeed * this.patternSpeed * timeMultiplier * 0.5;
+
+    // Move in square pattern
+    switch (this.patternData.squareSide) {
+      case 0: // Moving right
+        this.velocity.x = this.patternData.squareSpeed;
+        this.velocity.y = 0;
+        if (this.patternData.squareProgress > this.patternData.squareSize) {
+          this.patternData.squareSide = 1;
+          this.patternData.squareProgress = 0;
+        }
+        break;
+      case 1: // Moving down
+        this.velocity.x = 0;
+        this.velocity.y = this.patternData.squareSpeed;
+        if (this.patternData.squareProgress > this.patternData.squareSize) {
+          this.patternData.squareSide = 2;
+          this.patternData.squareProgress = 0;
+        }
+        break;
+      case 2: // Moving left
+        this.velocity.x = -this.patternData.squareSpeed;
+        this.velocity.y = 0;
+        if (this.patternData.squareProgress > this.patternData.squareSize) {
+          this.patternData.squareSide = 3;
+          this.patternData.squareProgress = 0;
+        }
+        break;
+      case 3: // Moving up
+        this.velocity.x = 0;
+        this.velocity.y = -this.patternData.squareSpeed;
+        if (this.patternData.squareProgress > this.patternData.squareSize) {
+          this.patternData.squareSide = 0;
+          this.patternData.squareProgress = 0;
+        }
+        break;
+    }
+
+    this.facingRight = this.velocity.x > 0;
+  }
+
+  updateWavePattern(timeMultiplier) {
+    const baseSpeed = GameConfig.MARTHA_PATTERNS.WAVE.baseSpeed;
+
+    if (!this.patternData.wavePhase && this.patternData.wavePhase !== 0) {
+      this.patternData.wavePhase = 0;
+      this.patternData.waveAmplitude = Math.min((this.bounds.bottom - this.bounds.top) / 4, 100);
+      this.patternData.waveCenterY = this.bounds.top + (this.bounds.bottom - this.bounds.top) / 2;
+    }
+
+    // Move horizontally in a sine wave
+    this.velocity.x = this.direction * baseSpeed * this.patternSpeed * timeMultiplier;
+
+    this.patternData.wavePhase += baseSpeed * this.patternSpeed * timeMultiplier * 0.05;
+    const targetY = this.patternData.waveCenterY + Math.sin(this.patternData.wavePhase) * this.patternData.waveAmplitude;
+
+    this.velocity.y = (targetY - this.y) * 0.1;
+
+    this.facingRight = this.direction > 0;
+  }
+
   applyMovement(deltaTime) {
     // Apply velocity
     this.x += this.velocity.x;
@@ -479,19 +698,25 @@ class MarthaManager {
         this.velocity.x = Math.abs(this.velocity.x); // Bounce right
         if (this.currentPattern === "horizontal") {
           this.direction = 1;
+        } else if (this.currentPattern === "bounce" && this.patternData.bounceDirection) {
+          this.patternData.bounceDirection.x = Math.abs(this.patternData.bounceDirection.x);
         } else if (this.patternData.diagonalDirection) {
           this.patternData.diagonalDirection.x = 1;
         }
       }
 
-      // Right boundary - trigger recovery animation
+      // Right boundary - trigger recovery animation (except for bounce pattern)
       if (this.x > this.bounds.right - this.width) {
         this.x = this.bounds.right - this.width;
-        // Start recovery animation moving left
-        this.isRecovering = true;
-        this.recoveryTimer = 0;
-        this.recoveryDirection = { x: -1, y: 0 };
-        this.facingRight = false;
+        if (this.currentPattern === "bounce" && this.patternData.bounceDirection) {
+          this.patternData.bounceDirection.x = -Math.abs(this.patternData.bounceDirection.x);
+        } else {
+          // Start recovery animation moving left
+          this.isRecovering = true;
+          this.recoveryTimer = 0;
+          this.recoveryDirection = { x: -1, y: 0 };
+          this.facingRight = false;
+        }
       }
 
       // Top boundary
@@ -500,18 +725,24 @@ class MarthaManager {
         this.velocity.y = Math.abs(this.velocity.y); // Bounce down
         if (this.currentPattern === "vertical") {
           this.direction = 1;
+        } else if (this.currentPattern === "bounce" && this.patternData.bounceDirection) {
+          this.patternData.bounceDirection.y = Math.abs(this.patternData.bounceDirection.y);
         } else if (this.patternData.diagonalDirection) {
           this.patternData.diagonalDirection.y = 1;
         }
       }
 
-      // Bottom boundary - trigger recovery animation
+      // Bottom boundary - trigger recovery animation (except for bounce pattern)
       if (this.y > this.bounds.bottom - this.height) {
         this.y = this.bounds.bottom - this.height;
-        // Start recovery animation moving up
-        this.isRecovering = true;
-        this.recoveryTimer = 0;
-        this.recoveryDirection = { x: 0, y: -1 };
+        if (this.currentPattern === "bounce" && this.patternData.bounceDirection) {
+          this.patternData.bounceDirection.y = -Math.abs(this.patternData.bounceDirection.y);
+        } else {
+          // Start recovery animation moving up
+          this.isRecovering = true;
+          this.recoveryTimer = 0;
+          this.recoveryDirection = { x: 0, y: -1 };
+        }
       }
 
       // Ensure Martha is always moving (minimum velocity) - skip during recovery
@@ -561,16 +792,65 @@ class MarthaManager {
 
   switchPattern() {
     if (this.availablePatterns.length > 0) {
-      this.currentPattern =
-        this.availablePatterns[
+      let newPattern;
+
+      // Check if we need to force a different pattern
+      const consecutiveCount = this.countConsecutivePatterns();
+
+      if (consecutiveCount >= this.maxConsecutivePatterns && this.availablePatterns.length > 1) {
+        // Force a different pattern - filter out the current pattern
+        const differentPatterns = this.availablePatterns.filter(
+          p => p !== this.currentPattern
+        );
+
+        if (differentPatterns.length > 0) {
+          newPattern = differentPatterns[
+            Math.floor(Math.random() * differentPatterns.length)
+          ];
+        } else {
+          // Fallback if something goes wrong
+          newPattern = this.availablePatterns[
+            Math.floor(Math.random() * this.availablePatterns.length)
+          ];
+        }
+      } else {
+        // Normal random selection
+        newPattern = this.availablePatterns[
           Math.floor(Math.random() * this.availablePatterns.length)
         ];
+      }
+
+      // Update pattern history
+      this.patternHistory.push(newPattern);
+
+      // Keep history to a reasonable length (last 10 patterns)
+      if (this.patternHistory.length > 10) {
+        this.patternHistory.shift();
+      }
+
+      this.currentPattern = newPattern;
       this.patternData = {};
       this.patternTimer = 0;
 
       // Reset direction for new pattern
       this.direction = Math.random() < 0.5 ? 1 : -1;
     }
+  }
+
+  countConsecutivePatterns() {
+    // Count how many times the current pattern appears consecutively at the end of history
+    if (this.patternHistory.length === 0) return 0;
+
+    let count = 0;
+    for (let i = this.patternHistory.length - 1; i >= 0; i--) {
+      if (this.patternHistory[i] === this.currentPattern) {
+        count++;
+      } else {
+        break;
+      }
+    }
+
+    return count;
   }
 
   // Phase 2.1 - Calculate catch quality based on distance from center
@@ -584,8 +864,8 @@ class MarthaManager {
     const dy = sockball.y - marthaCenterY;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    // Calculate max distance for catch (using Martha's width as reference)
-    const maxDistance = this.width / 2;
+    // Calculate max distance for catch (using fixed base width for consistency)
+    const maxDistance = GameConfig.MARTHA_SIZE.width / 2;
 
     // Normalized distance (0 = center, 1 = edge of Martha, >1 = beyond edge)
     const normalizedDistance = distance / maxDistance;
@@ -682,9 +962,10 @@ class MarthaManager {
 
   checkCollision(sockball) {
     // Phase 2.1 - Enhanced collision with catch radius multiplier
+    // Use fixed base size for consistent catch radius regardless of sprite
     const sockballRadius = GameConfig.SOCKBALL_SIZE / 2;
     const catchRadius =
-      (this.width / 2) * GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
+      (GameConfig.MARTHA_SIZE.width / 2) * GameConfig.CATCH_MECHANICS.CATCH_RADIUS_MULTIPLIER;
 
     // Calculate Martha's center
     const marthaCenterX = this.x + this.width / 2;
@@ -768,7 +1049,8 @@ class MarthaManager {
     // Calculate Martha's center position
     const centerX = this.x + this.width / 2;
     const centerY = this.y + this.height / 2;
-    const baseRadius = this.width / 2;
+    // Use fixed base size for consistent catch zones regardless of sprite
+    const baseRadius = GameConfig.MARTHA_SIZE.width / 2;
 
     // Get the catch radius with multiplier
     const catchRadius =
@@ -782,25 +1064,6 @@ class MarthaManager {
     const regularRadius = catchRadius;
 
     ctx.save();
-
-    // If Martha is exiting/entering, show BONUS zone indicator!
-    if (this.isExiting || this.isEntering) {
-      // Pulsing bonus indicator
-      const pulseIntensity = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
-
-      // Outer bonus glow
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, regularRadius * 1.3, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 105, 180, ${0.6 * pulseIntensity})`; // Hot pink
-      ctx.lineWidth = 4;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.fillStyle = `rgba(255, 105, 180, ${0.15 * pulseIntensity})`;
-      ctx.fill();
-
-      // Reset line dash for regular zones
-      ctx.setLineDash([]);
-    }
 
     // Draw Regular catch zone (outermost) - Blue
     ctx.beginPath();

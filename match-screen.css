@@ -21,6 +21,7 @@
   position: relative;
   transition: transform var(--transition-normal);
   animation: pile-idle 4s ease-in-out infinite;
+  cursor: grab;
 }
 
 @keyframes pile-idle {
@@ -43,6 +44,7 @@
   transform: scale(1.15);
   animation: pile-hover 0.5s ease-in-out infinite;
   filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+  cursor: grab;
 }
 
 @keyframes pile-hover {

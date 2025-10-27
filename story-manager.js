@@ -195,11 +195,16 @@ class StoryManager {
     if (!this.showingStory) return false;
 
     // Check button hovers
+    let anyButtonHovered = false;
     for (const key in this.buttons) {
       const button = this.buttons[key];
       const wasHovered = button.hovered;
       button.hovered = this.isPointInRect(x, y, button);
+      if (button.hovered) anyButtonHovered = true;
     }
+
+    // Update cursor
+    this.game.canvas.style.cursor = anyButtonHovered ? "pointer" : "default";
 
     return true;
   }
@@ -287,7 +292,6 @@ class StoryManager {
       !this.game.audioManager.currentMusic ||
       this.game.audioManager.currentMusic.paused
     ) {
-      console.log("🎵 Starting background music after user interaction");
       this.game.audioManager.playMusic("menu-music", true);
     }
   }

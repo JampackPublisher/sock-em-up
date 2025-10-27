@@ -316,6 +316,12 @@ class SockManager {
     };
 
     this.sockballAnimations.push(sockballAnim);
+
+    // Remove the sockball from the queue since we're now animating it
+    // This prevents double-counting (queue + completed)
+    this.game.getNextSockballFromQueue();
+
+    console.log(`🎬 Sockball animation started. Total animating: ${this.sockballAnimations.length}, Queue: ${this.game.getSockballQueueLength()}`);
   }
 
   updateSockballAnimations(deltaTime) {
@@ -363,6 +369,8 @@ class SockManager {
           this.game.sockBalls++;
           this.game.totalSockMatches++; // Track lifetime total matches
           this.game.totalSockballsEarned++; // Track lifetime sockballs
+
+          console.log(`✅ Sockball animation completed. sockBalls: ${this.game.sockBalls}, Remaining animating: ${this.sockballAnimations.length - 1}`);
 
           // Check Sock Hoarder achievement (100 socks matched)
           if (this.game.totalSockMatches >= 100) {
@@ -634,5 +642,9 @@ class SockManager {
 
   getSockListLength() {
     return this.sockList.length;
+  }
+
+  getAnimatingSockballsCount() {
+    return this.sockballAnimations.length;
   }
 }
