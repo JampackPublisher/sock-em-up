@@ -59,6 +59,16 @@ class LevelEndScreen extends Screen {
     const canvasHeight = this.game.getCanvasHeight();
     const marthaImageSize = this.game.getScaledValue(150); // Increased for better visibility
     const marthaToStatsMargin = this.game.getScaledValue(30);
+    const scoreLineHeight = this.game.getScaledValue(35);
+
+    const scoreStartY =
+      canvasHeight / 2 -
+      this.game.getScaledValue(160) + // Adjusted to match new marthaImageY
+      marthaImageSize +
+      marthaToStatsMargin;
+
+    // Note: Button Y position is calculated dynamically in renderScoreLines()
+    // based on actual visible lines, since score data isn't available during layout cache creation
 
     return {
       ...baseLayout,
@@ -71,15 +81,10 @@ class LevelEndScreen extends Screen {
       titleY: canvasHeight / 2 - this.game.getScaledValue(200),
       marthaImageY: canvasHeight / 2 - this.game.getScaledValue(160), // Moved up by 30
       marthaImageSize: marthaImageSize,
-      scoreStartY:
-        canvasHeight / 2 -
-        this.game.getScaledValue(160) + // Adjusted to match new marthaImageY
-        marthaImageSize +
-        marthaToStatsMargin,
-      scoreLineHeight: this.game.getScaledValue(35),
+      scoreStartY: scoreStartY,
+      scoreLineHeight: scoreLineHeight,
       buttonWidth: this.game.getScaledValue(200),
       buttonHeight: this.game.getScaledValue(50),
-      buttonY: canvasHeight / 2 + this.game.getScaledValue(270), // Moved down by 30
     };
   }
 
@@ -88,33 +93,82 @@ class LevelEndScreen extends Screen {
     this.resetScores();
     this.calculateScoresAndRent();
 
-    // Mark level as complete if no rent penalty (moved from handleContinue)
-    // This must happen BEFORE checking for NEW GAME+ unlock
+    // Play appropriate music based on win/lose
+    if (this.rentPenalty === 0) {
+      this.game.audioManager.playMusic("victory-music", false, 0.4);
+      // Unlock victory music in audio player
+      if (this.game.levelSelect && this.game.levelSelect.audioPlayer) {
+        this.game.levelSelect.audioPlayer.unlockTrack("victory-music");
+      }
+    } else {
+      this.game.audioManager.playMusic("defeat-music", false, 0.4);
+      // Unlock defeat music in audio player
+      if (this.game.levelSelect && this.game.levelSelect.audioPlayer) {
+        this.game.levelSelect.audioPlayer.unlockTrack("defeat-music");
+      }
+    }
+
     if (this.rentPenalty === 0) {
       this.game.completedLevels[this.game.currentLevel] = true;
-      console.log(
-        `Level ${
-          this.game.currentLevel + 1
-        } marked as complete - no rent penalty!`
-      );
-
-      // Phase 3.3 - Track difficulty completion
       this.game.markLevelCompleted(
         this.game.currentLevel,
         this.game.currentDifficulty
       );
 
-      // Check achievements (moved from handleContinue)
-      // Fix Bug #23: Achievement: SOCK_MASTER (complete all 9 levels) - with defensive checks
-      const allLevelsCompleted =
-        this.game.completedLevels &&
-        this.game.completedLevels.every((completed) => completed);
-      if (allLevelsCompleted) {
+      // Track consecutive level wins for streak achievements
+      if (!this.game.consecutiveLevelWins) {
+        this.game.consecutiveLevelWins = 0;
+      }
+      this.game.consecutiveLevelWins++;
+
+      // Achievement: BABY_SPEED_RUN - Win 5 levels in a row
+      if (
+        this.game.consecutiveLevelWins >=
+        GameConfig.ACHIEVEMENTS.BABY_SPEED_RUN.threshold
+      ) {
+        this.game.unlockAchievement("baby_speed_run");
+      }
+
+      // Achievement: SPEED_RUN - Win 9 levels in a row
+      if (
+        this.game.consecutiveLevelWins >=
+        GameConfig.ACHIEVEMENTS.SPEED_RUN.threshold
+      ) {
+        this.game.unlockAchievement("speed_run");
+      }
+
+      // Achievement: SPEED_ROYALTY - Win 20 levels in a row
+      if (
+        this.game.consecutiveLevelWins >=
+        GameConfig.ACHIEVEMENTS.SPEED_ROYALTY.threshold
+      ) {
+        this.game.unlockAchievement("speed_royalty");
+      }
+
+      // Achievement: TRIAL_BY_FIRE - Complete level 9 on +2 difficulty or higher
+      if (this.game.currentLevel === 8 && this.game.currentDifficulty >= 2) {
+        this.game.unlockAchievement("trial_by_fire");
+      }
+
+      // Track total levels played for GRIND_MASTER
+      if (!this.game.totalLevelsPlayed) {
+        this.game.totalLevelsPlayed = 0;
+      }
+      this.game.totalLevelsPlayed++;
+
+      // Achievement: GRIND_MASTER - Complete 100 total levels
+      if (this.game.totalLevelsPlayed >= 100) {
+        this.game.unlockAchievement("grind_master");
+      }
+
+      // Achievement: SOCK_MASTER - Complete all 9 base game levels (difficulty 0)
+      const allBaseLevelsCompleted =
+        this.game.completedLevelsByDifficulty[0] &&
+        this.game.completedLevelsByDifficulty[0].every((completed) => completed);
+      if (allBaseLevelsCompleted) {
         this.game.unlockAchievement("sock_master");
       }
 
-      // Achievement: NEW_GAME_PLUS_HERO (complete any level on +1 difficulty)
-      // Check if any level has been completed at difficulty >= 1
       const hasCompletedNewGamePlus = Object.keys(
         this.game.completedLevelsByDifficulty
       ).some((difficulty) => {
@@ -130,7 +184,6 @@ class LevelEndScreen extends Screen {
         this.game.unlockAchievement("new_game_plus_hero");
       }
 
-      // Achievement: ULTIMATE_CHAMPION (complete all levels on +4 difficulty)
       if (this.game.currentDifficulty >= 4) {
         const allLevelsCompletedOnPlus4 = GameConfig.LEVELS.every(
           (_, index) => {
@@ -144,14 +197,40 @@ class LevelEndScreen extends Screen {
           this.game.unlockAchievement("ultimate_champion");
         }
       }
+    } else {
+      // Reset consecutive wins on a loss
+      this.game.consecutiveLevelWins = 0;
+
+      // Track total losses for DISASTER_PRONE
+      if (!this.game.totalLevelLosses) {
+        this.game.totalLevelLosses = 0;
+      }
+      this.game.totalLevelLosses++;
+
+      // Achievement: DISASTER_PRONE - Lose 10 times total
+      if (this.game.totalLevelLosses >= 10) {
+        this.game.unlockAchievement("disaster_prone");
+      }
+
+      // Track total levels played (even losses count)
+      if (!this.game.totalLevelsPlayed) {
+        this.game.totalLevelsPlayed = 0;
+      }
+      this.game.totalLevelsPlayed++;
+
+      // Achievement: GRIND_MASTER - Complete 100 total levels
+      if (this.game.totalLevelsPlayed >= 100) {
+        this.game.unlockAchievement("grind_master");
+      }
     }
 
-    // Check if NEW GAME+ was just unlocked (AFTER markLevelCompleted)
     this.showingNewGamePlusUnlock = this.game.showNewGamePlusNotification;
+    this.newGamePlusUnlockedLevel = this.game.newGamePlusUnlockedLevel; // Store which NG+ level was unlocked
     if (this.showingNewGamePlusUnlock) {
-      this.game.showNewGamePlusNotification = false; // Reset flag
-      this.game.hasShownNewGamePlusBanner = true; // Mark banner as shown permanently
-      this.game.saveGameData(); // Persist the flag immediately
+      this.game.showNewGamePlusNotification = false;
+      const difficultyIndex = this.game.newGamePlusUnlockedLevel - 1;
+      this.game.hasShownNewGamePlusBanner[difficultyIndex] = true;
+      this.game.saveGameData();
     }
 
     this.setupScoreAnimation();
@@ -174,10 +253,9 @@ class LevelEndScreen extends Screen {
     const sockballsThrown = this.game.throwingScreen.sockballsThrown || 0;
 
     this.sockballsPaid = marthaGot;
-    this.sockballsLeftover = Math.max(
-      0,
-      totalSockballsCreated - sockballsThrown
-    );
+    // Use the sockball queue length saved when the level ended
+    // (this is saved in throwing-screen before the queue gets cleared)
+    this.sockballsLeftover = this.game.sockballsLeftoverAtEnd || 0;
     this.rentPenalty = Math.max(0, marthaWanted - marthaGot);
 
     // Catch quality counts
@@ -186,9 +264,11 @@ class LevelEndScreen extends Screen {
     this.regularCatches = this.game.catchQualityCounts?.REGULAR || 0;
 
     // Catch quality bonuses (these replace the base 5 points per sockball)
-    this.perfectCatchesPoints = this.perfectCatches * 15;
-    this.goodCatchesPoints = this.goodCatches * 10;
-    this.regularCatchesPoints = this.regularCatches * 5;
+    // Points scale with difficulty for NEW GAME+
+    const difficulty = this.game.currentDifficulty || 0;
+    this.perfectCatchesPoints = this.perfectCatches * GameConfig.getCatchQualityPoints('perfect', difficulty);
+    this.goodCatchesPoints = this.goodCatches * GameConfig.getCatchQualityPoints('good', difficulty);
+    this.regularCatchesPoints = this.regularCatches * GameConfig.getCatchQualityPoints('regular', difficulty);
 
     // Calculate base points for sockballs that were caught
     // Total caught sockballs = sum of all catch qualities
@@ -199,21 +279,27 @@ class LevelEndScreen extends Screen {
       this.goodCatchesPoints +
       this.regularCatchesPoints;
 
-    // For sockballs paid but not caught (missed/failed), give base 5 points each
+    // For sockballs paid but not caught (missed/failed), give base points each (scaled by difficulty)
     const uncaughtPaidSockballs = Math.max(
       0,
       this.sockballsPaid - totalCaughtSockballs
     );
-    this.sockballsPaidPoints = uncaughtPaidSockballs * 5;
+    this.sockballsPaidPoints = uncaughtPaidSockballs * GameConfig.getCatchQualityPoints('regular', difficulty);
 
     // Time bonus: double the total rent payment points (catch quality + base) if earned
+    // Only award time bonus if the player won (no rent penalty)
     this.timeBonusPoints = 0;
-    if (this.game.timeBonusEarned && this.sockballsPaid > 0) {
+    if (this.game.timeBonusEarned && this.sockballsPaid > 0 && this.rentPenalty === 0) {
       this.timeBonusPoints = totalCatchQualityPoints + this.sockballsPaidPoints;
     }
 
-    this.sockballsLeftoverPoints = this.sockballsLeftover * 10;
-    this.rentPenaltyPoints = this.rentPenalty * -10;
+    // Leftover sockballs bonus increases with difficulty (20, 30, 40, 50 for NG+ 1-4)
+    this.sockballsLeftoverBonus = difficulty === 0 ? 10 : 10 + (difficulty * 10);
+    this.sockballsLeftoverPoints = this.sockballsLeftover * this.sockballsLeftoverBonus;
+
+    // Rent penalty increases with difficulty (20, 30, 40, 50 for NG+ 1-4)
+    this.rentPenaltyPerSockball = difficulty === 0 ? 10 : 10 + (difficulty * 10);
+    this.rentPenaltyPoints = this.rentPenalty * -this.rentPenaltyPerSockball;
 
     // Calculate the raw total (can be negative)
     const rawTotal =
@@ -243,8 +329,17 @@ class LevelEndScreen extends Screen {
       // Choose winning Martha spritesheet based on difficulty
       const difficulty = this.game.currentDifficulty || 0;
 
-      if (difficulty >= 3) {
-        // NEW GAME+ 3-4: Use fatsop spritesheet
+      if (difficulty >= 4) {
+        // NEW GAME+ 4: Randomly choose from all winning spritesheets
+        const winningSpritesheets = [
+          "martha-sockballs-spritesheet.png",
+          "martha-rumble-spritesheet.png",
+          "martha-fatsop-spritesheet.png",
+        ];
+        const randomIndex = Math.floor(Math.random() * winningSpritesheets.length);
+        this.marthaImage = this.game.images[winningSpritesheets[randomIndex]];
+      } else if (difficulty >= 3) {
+        // NEW GAME+ 3: Use fatsop spritesheet
         this.marthaImage = this.game.images["martha-fatsop-spritesheet.png"];
       } else if (difficulty >= 1) {
         // NEW GAME+ 1-2: Use rumble spritesheet
@@ -260,9 +355,9 @@ class LevelEndScreen extends Screen {
     // Calculate animation duration to always take 3 seconds total
     const totalAnimationTime = 3000; // 3 seconds in milliseconds
 
-    // Time bonus display value (in points, not sockballs)
+    // Time bonus display value (use actual points for animation)
     const timeBonusDisplayValue = this.game.timeBonusEarned
-      ? Math.floor(this.timeBonusPoints / 5)
+      ? this.timeBonusPoints
       : 0;
 
     // Calculate total steps needed across all stages
@@ -415,7 +510,7 @@ class LevelEndScreen extends Screen {
     this.continueButton.width = layout.buttonWidth;
     this.continueButton.height = layout.buttonHeight;
     this.continueButton.x = layout.centerX - layout.buttonWidth / 2;
-    this.continueButton.y = layout.buttonY;
+    // Button Y will be calculated dynamically in render based on actual visible lines
   }
 
   onUpdate(deltaTime) {
@@ -431,11 +526,10 @@ class LevelEndScreen extends Screen {
       if (this.showRentDue) {
         config = GameConfig.MARTHA_LOSING_SPRITESHEET;
       } else {
-        // Choose config based on difficulty
-        const difficulty = this.game.currentDifficulty || 0;
-        if (difficulty >= 3) {
+        // Determine which config to use based on the selected image
+        if (this.marthaImage === this.game.images["martha-fatsop-spritesheet.png"]) {
           config = GameConfig.MARTHA_FATSOP_SPRITESHEET;
-        } else if (difficulty >= 1) {
+        } else if (this.marthaImage === this.game.images["martha-rumble-spritesheet.png"]) {
           config = GameConfig.MARTHA_RUMBLE_SPRITESHEET;
         } else {
           config = GameConfig.MARTHA_SOCKBALLS_SPRITESHEET;
@@ -521,8 +615,8 @@ class LevelEndScreen extends Screen {
       this.game.playerPoints + this.totalScore
     );
 
-    // Achievement: DEEP_POCKETS (have 500 money at once)
-    if (this.game.playerPoints >= 500) {
+    // Achievement: DEEP_POCKETS
+    if (this.game.playerPoints >= GameConfig.ACHIEVEMENTS.DEEP_POCKETS.threshold) {
       this.game.unlockAchievement("deep_pockets");
     }
 
@@ -539,6 +633,44 @@ class LevelEndScreen extends Screen {
     if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
       this.handleContinue();
     }
+  }
+
+  // Controller reticle support
+  getInteractiveElements() {
+    const elements = [];
+
+    // Add continue button
+    const b = this.continueButton;
+    elements.push({
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height
+    });
+
+    return elements;
+  }
+
+  handleReticleMove(x, y) {
+    // Reuse the existing mouse move logic for hover detection
+    const b = this.continueButton;
+    b.hovered =
+      x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+
+    // Update reticle hover state in controller manager
+    if (this.game.controllerManager) {
+      this.game.controllerManager.setReticleHoverState(b.hovered);
+    }
+  }
+
+  handleReticleAction(x, y) {
+    // Reuse the existing click logic
+    const b = this.continueButton;
+    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+      this.handleContinue();
+      return true;
+    }
+    return false;
   }
 
   onRender(ctx) {
@@ -788,15 +920,15 @@ class LevelEndScreen extends Screen {
     }
 
     if (this.useSpritesheet) {
-      // Render spritesheet frame - choose config based on difficulty
+      // Render spritesheet frame - determine config based on selected image
       let config;
       if (this.showRentDue) {
         config = GameConfig.MARTHA_LOSING_SPRITESHEET;
       } else {
-        const difficulty = this.game.currentDifficulty || 0;
-        if (difficulty >= 3) {
+        // Determine which config to use based on the selected image
+        if (this.marthaImage === this.game.images["martha-fatsop-spritesheet.png"]) {
           config = GameConfig.MARTHA_FATSOP_SPRITESHEET;
-        } else if (difficulty >= 1) {
+        } else if (this.marthaImage === this.game.images["martha-rumble-spritesheet.png"]) {
           config = GameConfig.MARTHA_RUMBLE_SPRITESHEET;
         } else {
           config = GameConfig.MARTHA_SOCKBALLS_SPRITESHEET;
@@ -848,39 +980,46 @@ class LevelEndScreen extends Screen {
   }
 
   renderScoreLines(ctx, layout) {
+    // Get difficulty-based point values
+    const difficulty = this.game.currentDifficulty || 0;
+    const perfectPoints = GameConfig.getCatchQualityPoints('perfect', difficulty);
+    const goodPoints = GameConfig.getCatchQualityPoints('good', difficulty);
+    const regularPoints = GameConfig.getCatchQualityPoints('regular', difficulty);
+
     const scoreLines = [
       {
         label: `${this.perfectCatchesDisplay}x PERFECT CATCHES:`,
-        value: this.perfectCatchesDisplay * 15,
+        value: this.perfectCatchesDisplay * perfectPoints,
         color: "#FFD700",
         show: this.perfectCatches > 0,
       },
       {
         label: `${this.goodCatchesDisplay}x GOOD CATCHES:`,
-        value: this.goodCatchesDisplay * 10,
+        value: this.goodCatchesDisplay * goodPoints,
         color: "#00FF00",
         show: this.goodCatches > 0,
       },
       {
         label: `${this.regularCatchesDisplay}x NICE CATCHES:`,
-        value: this.regularCatchesDisplay * 5,
+        value: this.regularCatchesDisplay * regularPoints,
         color: "#FFFFFF",
         show: this.regularCatches > 0,
       },
       {
         label: `TIME BONUS (2x RENT):`,
-        value: this.timeBonusDisplay * 5,
+        value: this.timeBonusDisplay,
         color: "#FFD700",
         show: this.game.timeBonusEarned,
       },
       {
-        label: `SOCKBALLS LEFTOVER:`,
-        value: this.sockballsLeftoverDisplay * 10,
+        label: `${this.sockballsLeftoverDisplay}x SOCKBALLS LEFTOVER:`,
+        value: this.sockballsLeftoverDisplay * this.sockballsLeftoverBonus,
         color: "#95E1D3",
+        show: this.sockballsLeftover > 0, // Only show if there are leftover sockballs
       },
       {
         label: `RENT PENALTY:`,
-        value: this.rentPenaltyDisplay * -10,
+        value: this.rentPenaltyDisplay * -this.rentPenaltyPerSockball,
         color: "#FF6B6B",
         show: this.rentPenalty > 0, // Only show if there's a penalty
       },
@@ -918,6 +1057,9 @@ class LevelEndScreen extends Screen {
     ctx.lineTo(layout.centerX + separatorWidth / 2, separatorY);
     ctx.stroke();
     ctx.restore();
+
+    // Calculate button position: 50 pixels below the separator line
+    this.continueButton.y = separatorY + this.game.getScaledValue(50);
 
     // Render only visible lines
     let displayIndex = 0;
@@ -1150,7 +1292,8 @@ class LevelEndScreen extends Screen {
     ctx.shadowBlur = this.game.getScaledValue(30);
     ctx.strokeRect(0, bannerY, canvasWidth, bannerHeight);
 
-    // Title
+    // Title - show which NG+ level was unlocked
+    const plusLevel = this.newGamePlusUnlockedLevel > 1 ? ` ${this.newGamePlusUnlockedLevel}` : '';
     ctx.shadowBlur = this.game.getScaledValue(10);
     ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
     ctx.fillStyle = "#FFD700";
@@ -1158,7 +1301,7 @@ class LevelEndScreen extends Screen {
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillText(
-      "NEW GAME+ UNLOCKED!",
+      `NEW GAME+${plusLevel} UNLOCKED!`,
       canvasWidth / 2,
       bannerY + this.game.getScaledValue(20)
     );

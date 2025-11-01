@@ -57,6 +57,7 @@ class ThrowingScreen extends Screen {
     this.missedThrows = 0;
     this.consecutiveHits = 0; // Track consecutive hits on Martha
     this.wallBounceCatchesThisLevel = 0; // Track wall bounce catches
+    this.flubRecordedThisLevel = false; // Track if flub has been recorded for this level
 
     // Exit button
     this.exitButton = {
@@ -96,9 +97,18 @@ class ThrowingScreen extends Screen {
     this.missedThrows = 0;
     this.consecutiveHits = 0;
     this.wallBounceCatchesThisLevel = 0;
+    this.flubRecordedThisLevel = false;
 
-    // Setup Martha for current level
-    const level = GameConfig.LEVELS[this.game.currentLevel];
+    // Reset consecutive perfect throws for new level
+    this.game.consecutivePerfectThrows = 0;
+    this.game.consecutiveMisses = 0;
+
+    // Reset current game miss counter for NO_HOPE achievement
+    this.game.currentGameMisses = 0;
+
+    // Setup Martha for current level - use difficulty-modified level data
+    const level =
+      this.game.currentLevelData || GameConfig.LEVELS[this.game.currentLevel];
     this.marthaManager.setup(level);
 
     // Scale launch position
@@ -111,12 +121,12 @@ class ThrowingScreen extends Screen {
 
     // Phase 3.2 - Load level-specific background
     const backgroundFilename =
-      GameConfig.LEVEL_BACKGROUNDS[this.game.currentLevel] || "throw-bg.png";
+      GameConfig.LEVEL_BACKGROUNDS[this.game.currentLevel] || "throw-bg.jpg";
     this.backgroundImage = this.game.images[backgroundFilename];
 
     // Fallback to default if level-specific background not found
     if (!this.backgroundImage) {
-      this.backgroundImage = this.game.images["throw-bg.png"];
+      this.backgroundImage = this.game.images["throw-bg.jpg"];
     }
 
     // Set up next sockball type
@@ -125,7 +135,36 @@ class ThrowingScreen extends Screen {
     this.game.feedbackManager.reset();
     this.game.feedbackManager.onLevelStart();
 
-    this.game.audioManager.playMusic("throwing-music", true, 0.3);
+    // Select throwing music based on new game plus level
+    let throwingMusicName = "throwing-music"; // Default for NG+0
+    const currentDifficulty = this.game.currentDifficulty;
+
+    if (currentDifficulty === 1) {
+      throwingMusicName = "throwing-music-1";
+    } else if (currentDifficulty === 2) {
+      throwingMusicName = "throwing-music-2";
+    } else if (currentDifficulty === 3) {
+      throwingMusicName = "throwing-music-3";
+    } else if (currentDifficulty >= 4) {
+      // For NG+4 and beyond, randomly select from all throwing music
+      const randomChoice = Math.floor(Math.random() * 4);
+      if (randomChoice === 0) {
+        throwingMusicName = "throwing-music";
+      } else if (randomChoice === 1) {
+        throwingMusicName = "throwing-music-1";
+      } else if (randomChoice === 2) {
+        throwingMusicName = "throwing-music-2";
+      } else {
+        throwingMusicName = "throwing-music-3";
+      }
+    }
+
+    this.game.audioManager.playMusic(throwingMusicName, true, 0.3);
+
+    // Unlock the track in audio player
+    if (this.game.levelSelect && this.game.levelSelect.audioPlayer) {
+      this.game.levelSelect.audioPlayer.unlockTrack(throwingMusicName);
+    }
 
     this.showMessage("Click to throw sockballs at Martha!", "info", 3000);
   }
@@ -153,27 +192,13 @@ class ThrowingScreen extends Screen {
   }
 
   updateNextSockballType() {
-    // Get the next sockball type from the queue
     this.nextSockballType = this.game.getNextSockballType();
-    console.log(
-      "updateNextSockballType called, result:",
-      this.nextSockballType,
-      "Queue length:",
-      this.game.getSockballQueueLength()
-    );
 
-    // If no type is available but we have sockballs to throw, generate from level's available types
     if (!this.nextSockballType && this.availableSockballs > 0) {
       const level = GameConfig.LEVELS[this.game.currentLevel];
       const availableTypes = level.typesAvailable;
       this.nextSockballType =
         availableTypes[Math.floor(Math.random() * availableTypes.length)];
-      console.log(
-        "Generated sockball type from level's available types:",
-        this.nextSockballType,
-        "Available:",
-        availableTypes
-      );
     }
   }
 
@@ -340,20 +365,15 @@ class ThrowingScreen extends Screen {
   throwSockball(targetX, targetY) {
     if (!this.canThrow()) return;
 
-    // Use the previewed sockball type (which was already determined)
     let sockballType = this.nextSockballType;
 
-    // Try to get from queue if we don't have a preview type
     if (!sockballType) {
       sockballType = this.game.getNextSockballFromQueue();
     }
 
-    // If still no type, generate random as last resort
     if (!sockballType) {
-      console.warn("No sockball type available, using random");
       sockballType = Math.floor(Math.random() * 6) + 1;
     } else {
-      // Remove from queue since we're using the previewed type
       this.game.getNextSockballFromQueue();
     }
 
@@ -366,13 +386,17 @@ class ThrowingScreen extends Screen {
     const deltaY = targetY - this.launchPosition.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    // Prevent division by zero if click position equals launch position
     if (distance === 0) {
-      console.warn("Cannot throw sockball: distance is zero");
       return;
     }
 
-    const normalizedVelocity = GameConfig.SOCKBALL_THROW_SPEED / distance;
+    // Apply difficulty-based throw speed multiplier
+    const difficultyMode = GameConfig.getDifficultyMode(
+      this.game.currentDifficulty
+    );
+    const adjustedThrowSpeed =
+      GameConfig.SOCKBALL_THROW_SPEED * difficultyMode.throwSpeedMultiplier;
+    const normalizedVelocity = adjustedThrowSpeed / distance;
 
     // Create sockball projectile with the tracked type
     const sockball = {
@@ -381,30 +405,30 @@ class ThrowingScreen extends Screen {
       vx: deltaX * normalizedVelocity,
       vy: deltaY * normalizedVelocity,
       size: GameConfig.SOCKBALL_SIZE,
-      type: sockballType, // Use the tracked type instead of random
+      type: sockballType,
       rotation: 0,
       rotationSpeed: 0.2,
       gravity: GameConfig.GRAVITY,
       bounced: false,
+      bounceCount: 0,
       active: true,
-      // Track distance to Martha for catch zone detection
       previousDistanceToMartha: Infinity,
       enteredCatchZone: false,
-      bestZoneEntered: null, // Track the best quality zone entered
+      bestZoneEntered: null,
     };
 
     this.sockballProjectiles.push(sockball);
     this.showTrajectory = false;
 
-    // Update next sockball type for preview
     this.updateNextSockballType();
   }
 
   updateTrajectoryPreview(targetX, targetY) {
     this.trajectoryPoints = [];
 
-    // Simulate trajectory
-    const steps = 20;
+    // Use a fixed trajectory length based on direction, not speed
+    const fixedTrajectoryLength = this.game.getScaledValue(250); // Fixed visual length in pixels
+
     let x = this.launchPosition.x;
     let y = this.launchPosition.y;
 
@@ -412,30 +436,247 @@ class ThrowingScreen extends Screen {
     const deltaY = targetY - y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    // Prevent division by zero if target position equals launch position
     if (distance === 0) {
       return;
     }
 
-    const normalizedVelocity = GameConfig.SOCKBALL_THROW_SPEED / distance;
+    // Normalize the direction
+    const dirX = deltaX / distance;
+    const dirY = deltaY / distance;
 
-    let vx = deltaX * normalizedVelocity;
-    let vy = deltaY * normalizedVelocity;
+    // Create trajectory points along a fixed distance
+    const pointCount = 8; // Number of dots in the trajectory line
+    for (let i = 0; i <= pointCount; i++) {
+      const distanceAlongLine = (i / pointCount) * fixedTrajectoryLength;
+      const pointX = this.launchPosition.x + dirX * distanceAlongLine;
+      const pointY = this.launchPosition.y + dirY * distanceAlongLine;
 
-    for (let i = 0; i < steps; i++) {
-      this.trajectoryPoints.push({ x, y });
+      // Only add points that are within canvas bounds
+      if (
+        pointX >= 0 &&
+        pointX <= this.game.getCanvasWidth() &&
+        pointY >= 0 &&
+        pointY <= this.game.getCanvasHeight()
+      ) {
+        this.trajectoryPoints.push({ x: pointX, y: pointY });
+      }
+    }
+  }
 
-      x += vx;
-      y += vy;
-      vy += GameConfig.GRAVITY;
+  handleSockballCatch(sockball, catchQuality, isBonusHit) {
+    // Achievement: PINCER - Hit Martha within 0.5 seconds with 2 sockballs
+    const currentTime = Date.now() / 1000; // Convert to seconds
+    if (this.game.lastHitTime > 0) {
+      const timeSinceLastHit = currentTime - this.game.lastHitTime;
+      if (timeSinceLastHit <= GameConfig.ACHIEVEMENTS.PINCER.timeWindow) {
+        console.log(
+          `[PINCER] Detected! Time between hits: ${timeSinceLastHit.toFixed(
+            3
+          )}s`
+        );
+        this.game.unlockAchievement("pincer");
+
+        // Increment pincer counter
+        this.game.totalPincers++;
+        console.log(
+          `[PINCER] Total pincers: ${this.game.totalPincers}/${GameConfig.ACHIEVEMENTS.PINCER_ADDICT.threshold}`
+        );
+
+        // Achievement: PINCER_ADDICT - 10 lifetime pincers
+        if (
+          this.game.totalPincers >=
+          GameConfig.ACHIEVEMENTS.PINCER_ADDICT.threshold
+        ) {
+          this.game.unlockAchievement("pincer_addict");
+          console.log("[PINCER_ADDICT] Achievement unlocked!");
+        }
+      }
+    }
+    this.game.lastHitTime = currentTime;
+
+    // Track wall bounce catches for achievements
+    if (sockball.bounced) {
+      this.wallBounceCatchesThisLevel++;
+      this.game.totalWallBounceCatches++;
+
+      this.game.unlockAchievement("bank_shot");
+
+      // Achievement: PERFECT_BOUNCE_SHOT (perfect catch from a bounced shot)
+      if (catchQuality === "PERFECT") {
+        console.log(
+          "[PERFECT_BOUNCE_SHOT] Unlocking achievement - bounced:",
+          sockball.bounced,
+          "bounceCount:",
+          sockball.bounceCount,
+          "quality:",
+          catchQuality
+        );
+        this.game.unlockAchievement("perfect_bounce_shot");
+      }
 
       if (
-        y > this.game.getCanvasHeight() ||
-        x < 0 ||
-        x > this.game.getCanvasWidth()
+        this.wallBounceCatchesThisLevel >=
+        GameConfig.ACHIEVEMENTS.PINBALL_WIZARD.threshold
       ) {
-        break;
+        this.game.unlockAchievement("pinball_wizard");
       }
+
+      if (
+        this.game.totalWallBounceCatches >=
+        GameConfig.ACHIEVEMENTS.PINBALL_KING.threshold
+      ) {
+        this.game.unlockAchievement("pinball_king");
+      }
+
+      // Track double bounce catches for achievements
+      if (sockball.bounceCount >= 2) {
+        this.game.totalDoubleBounces++;
+
+        this.game.unlockAchievement("how_did_you");
+
+        if (
+          this.game.totalDoubleBounces >=
+          GameConfig.ACHIEVEMENTS.SPACE_SHOOTER.threshold
+        ) {
+          this.game.unlockAchievement("space_shooter");
+        }
+      }
+
+      // Achievement: THATS_NOT_POSSIBLE - Hit Martha with a sockball that bounced 3+ times
+      if (
+        sockball.bounceCount >=
+        GameConfig.ACHIEVEMENTS.THATS_NOT_POSSIBLE.bounceThreshold
+      ) {
+        console.log(
+          `[THATS_NOT_POSSIBLE] Unlocking achievement - bounceCount: ${sockball.bounceCount}`
+        );
+        this.game.unlockAchievement("thats_not_possible");
+      }
+    }
+
+    if (isBonusHit) {
+      // Track bonus hits for achievements
+      this.game.totalBonusHits++;
+
+      this.game.unlockAchievement("bonus_hunter");
+
+      if (
+        this.game.totalBonusHits >=
+        GameConfig.ACHIEVEMENTS.BONUS_MASTER.threshold
+      ) {
+        this.game.unlockAchievement("bonus_master");
+      }
+      this.showMessage("BONUS CATCH!", "success", 1500);
+      if (catchQuality === "PERFECT") {
+        this.game.feedbackManager.onPerfectCatch();
+        this.game.consecutivePerfectThrows++;
+        this.game.consecutiveMisses = 0;
+
+        // Track lifetime perfect shots
+        this.game.totalPerfectShots++;
+
+        // Achievement: KINDA_PERFECT (25 perfects)
+        if (
+          this.game.totalPerfectShots >=
+          GameConfig.ACHIEVEMENTS.KINDA_PERFECT.threshold
+        ) {
+          this.game.unlockAchievement("kinda_perfect");
+        }
+
+        // Achievement: PERFECTION (100 perfects)
+        if (
+          this.game.totalPerfectShots >=
+          GameConfig.ACHIEVEMENTS.PERFECTION.threshold
+        ) {
+          this.game.unlockAchievement("perfection");
+        }
+
+        if (
+          this.game.consecutivePerfectThrows >=
+          GameConfig.ACHIEVEMENTS.SOCK_SNIPER.threshold
+        ) {
+          this.game.unlockAchievement("sock_sniper");
+        }
+      } else if (catchQuality === "GOOD") {
+        this.game.feedbackManager.onGoodCatch();
+        this.game.consecutivePerfectThrows = 0;
+        this.game.consecutiveMisses = 0; // Reset miss streak on successful catch
+
+        // Track lifetime good shots
+        this.game.totalGoodShots++;
+
+        // Achievement: GOOD_ENOUGH (250 good shots)
+        if (
+          this.game.totalGoodShots >=
+          GameConfig.ACHIEVEMENTS.GOOD_ENOUGH.threshold
+        ) {
+          this.game.unlockAchievement("good_enough");
+        }
+      } else {
+        this.game.feedbackManager.onRegularCatch();
+        this.game.consecutivePerfectThrows = 0;
+        this.game.consecutiveMisses = 0; // Reset miss streak on successful catch
+      }
+    } else if (catchQuality === "PERFECT") {
+      this.game.feedbackManager.onPerfectCatch();
+      this.perfectThrowsThisLevel++;
+
+      // Achievement: PERFECT_THROW
+      this.game.unlockAchievement("perfect_throw");
+
+      // Track consecutive perfect throws for Sock Sniper
+      this.game.consecutivePerfectThrows++;
+      this.game.consecutiveMisses = 0;
+
+      // Track lifetime perfect shots
+      this.game.totalPerfectShots++;
+
+      // Achievement: KINDA_PERFECT (25 perfects)
+      if (
+        this.game.totalPerfectShots >=
+        GameConfig.ACHIEVEMENTS.KINDA_PERFECT.threshold
+      ) {
+        this.game.unlockAchievement("kinda_perfect");
+      }
+
+      // Achievement: PERFECTION (100 perfects)
+      if (
+        this.game.totalPerfectShots >=
+        GameConfig.ACHIEVEMENTS.PERFECTION.threshold
+      ) {
+        this.game.unlockAchievement("perfection");
+      }
+
+      // Achievement: SOCK_SNIPER
+      if (
+        this.game.consecutivePerfectThrows >=
+        GameConfig.ACHIEVEMENTS.SOCK_SNIPER.threshold
+      ) {
+        this.game.unlockAchievement("sock_sniper");
+      }
+    } else if (catchQuality === "GOOD") {
+      this.game.feedbackManager.onGoodCatch();
+      this.game.consecutivePerfectThrows = 0; // Reset perfect streak
+      this.game.consecutiveMisses = 0; // Reset miss streak on successful catch
+
+      // Track lifetime good shots
+      this.game.totalGoodShots++;
+
+      // Achievement: GOOD_ENOUGH (250 good shots)
+      if (
+        this.game.totalGoodShots >=
+        GameConfig.ACHIEVEMENTS.GOOD_ENOUGH.threshold
+      ) {
+        this.game.unlockAchievement("good_enough");
+      }
+    } else {
+      this.game.feedbackManager.onRegularCatch();
+      this.game.consecutivePerfectThrows = 0; // Reset perfect streak
+      this.game.consecutiveMisses = 0; // Reset miss streak on successful catch
+    }
+
+    if (this.consecutiveHits >= GameConfig.ACHIEVEMENTS.DEADEYE.threshold) {
+      this.game.unlockAchievement("deadeye");
     }
   }
 
@@ -463,35 +704,57 @@ class ThrowingScreen extends Screen {
           sockball.size / 2,
           Math.min(canvasWidth - sockball.size / 2, sockball.x)
         );
-        sockball.bounced = true; // Mark as bounced when hitting side walls
+        sockball.bounced = true;
+        sockball.bounceCount++;
       }
 
       if (sockball.y <= sockball.size / 2) {
         sockball.vy *= -GameConfig.BOUNCE_DAMPING;
         sockball.y = sockball.size / 2;
         sockball.bounced = true; // Mark as bounced when hitting top
+        sockball.bounceCount++;
       }
 
-      // Remove if falls off bottom (counts as a miss)
       if (sockball.y > canvasHeight + sockball.size) {
         this.missedThrows++;
-        this.consecutiveHits = 0; // Reset consecutive hits on miss
-        this.game.consecutiveMisses++; // Track consecutive misses for Butterfingers
-        this.game.consecutivePerfectThrows = 0; // Reset perfect streak
+        this.consecutiveHits = 0;
+        this.game.consecutiveMisses++;
+        this.game.consecutivePerfectThrows = 0;
 
-        // Achievement: BUTTERFINGERS (miss 5 throws in a row)
-        if (this.game.consecutiveMisses >= 5) {
+        // Achievement tracking for misses
+        this.game.currentGameMisses++;
+        this.game.totalMisses++;
+
+        if (
+          this.game.consecutiveMisses >=
+          GameConfig.ACHIEVEMENTS.BUTTERFINGERS.threshold
+        ) {
           this.game.unlockAchievement("butterfingers");
+        }
+
+        // Achievement: NO_HOPE - Miss 10 sockballs in a single game
+        if (
+          this.game.currentGameMisses >=
+          GameConfig.ACHIEVEMENTS.NO_HOPE.threshold
+        ) {
+          this.game.unlockAchievement("no_hope");
+        }
+
+        // Achievement: MISS_MISS_MISS - Miss 100 sockballs lifetime
+        if (
+          this.game.totalMisses >=
+          GameConfig.ACHIEVEMENTS.MISS_MISS_MISS.threshold
+        ) {
+          this.game.unlockAchievement("miss_miss_miss");
         }
 
         return false;
       }
 
-      // Check collision with Martha using zone-based catching
-      // Ball must enter a zone and then start moving away before being caught
-      // Allow bonus hits when Martha is exiting/entering - these give bonus points!
       const isBonusHit =
-        this.marthaManager.isExiting || this.marthaManager.isEntering;
+        this.marthaManager.isExiting ||
+        this.marthaManager.isEntering ||
+        !this.marthaManager.onScreen;
 
       const marthaCenterX = this.marthaManager.x + this.marthaManager.width / 2;
       const marthaCenterY =
@@ -500,8 +763,6 @@ class ThrowingScreen extends Screen {
       const dy = sockball.y - marthaCenterY;
       const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
-      // Check if in catch zone (adjusted by difficulty)
-      // Use fixed base size for consistent catch radius regardless of sprite
       const difficultyMode = GameConfig.getDifficultyMode(
         this.game.currentDifficulty
       );
@@ -534,7 +795,6 @@ class ThrowingScreen extends Screen {
           currentZone = "REGULAR";
         }
 
-        // Track the best zone entered (PERFECT > GOOD > REGULAR)
         if (
           !sockball.bestZoneEntered ||
           currentZone === "PERFECT" ||
@@ -543,12 +803,12 @@ class ThrowingScreen extends Screen {
           sockball.bestZoneEntered = currentZone;
         }
 
-        // Check if ball is moving away from center (distance increasing)
+        // Check if moving away from Martha OR if this is the closest point
         const movingAway = currentDistance > sockball.previousDistanceToMartha;
 
-        // Catch the ball if it's moving away and has entered a zone
+        // Catch the sockball if moving away OR if we've been in the catch zone long enough
+        // and have tracked a best zone
         if (movingAway && sockball.bestZoneEntered) {
-          // Pass bonus flag to Martha manager if she's exiting/entering
           const catchQuality = this.marthaManager.hitBySockball(
             sockball,
             sockball.bestZoneEntered,
@@ -569,81 +829,8 @@ class ThrowingScreen extends Screen {
 
             this.consecutiveHits++;
 
-            // Track wall bounce catches for achievements
-            if (sockball.bounced) {
-              this.wallBounceCatchesThisLevel++;
-              this.game.totalWallBounceCatches++;
-
-              // Achievement: BANK_SHOT (first wall bounce catch)
-              this.game.unlockAchievement("bank_shot");
-
-              // Achievement: PINBALL_WIZARD (3 wall bounce catches in one level)
-              if (this.wallBounceCatchesThisLevel >= 3) {
-                this.game.unlockAchievement("pinball_wizard");
-              }
-
-              // Achievement: PINBALL_KING (25 total wall bounce catches)
-              if (this.game.totalWallBounceCatches >= 25) {
-                this.game.unlockAchievement("pinball_king");
-              }
-            }
-
-            if (isBonusHit) {
-              // Track bonus hits for achievements
-              this.game.totalBonusHits++;
-
-              // Achievement: BONUS_HUNTER (first bonus hit)
-              this.game.unlockAchievement("bonus_hunter");
-
-              // Achievement: BONUS_MASTER (10 total bonus hits)
-              if (this.game.totalBonusHits >= 10) {
-                this.game.unlockAchievement("bonus_master");
-              }
-
-              // Bonus hits get special message but use normal quality feedback
-              this.showMessage("BONUS CATCH!", "success", 1500);
-              if (catchQuality === "PERFECT") {
-                this.game.feedbackManager.onPerfectCatch();
-                this.game.consecutivePerfectThrows++;
-                this.game.consecutiveMisses = 0;
-
-                // Achievement: SOCK_SNIPER (3 perfect throws in a row)
-                if (this.game.consecutivePerfectThrows >= 3) {
-                  this.game.unlockAchievement("sock_sniper");
-                }
-              } else if (catchQuality === "GOOD") {
-                this.game.feedbackManager.onGoodCatch();
-                this.game.consecutivePerfectThrows = 0;
-              } else {
-                this.game.feedbackManager.onRegularCatch();
-                this.game.consecutivePerfectThrows = 0;
-              }
-            } else if (catchQuality === "PERFECT") {
-              this.game.feedbackManager.onPerfectCatch();
-              this.perfectThrowsThisLevel++;
-
-              // Achievement: PERFECT_THROW
-              this.game.unlockAchievement("perfect_throw");
-
-              // Track consecutive perfect throws for Sock Sniper
-              this.game.consecutivePerfectThrows++;
-              this.game.consecutiveMisses = 0;
-
-              // Achievement: SOCK_SNIPER (3 perfect throws in a row)
-              if (this.game.consecutivePerfectThrows >= 3) {
-                this.game.unlockAchievement("sock_sniper");
-              }
-            } else if (catchQuality === "GOOD") {
-              this.game.feedbackManager.onGoodCatch();
-              this.game.consecutivePerfectThrows = 0; // Reset perfect streak
-            } else {
-              this.game.feedbackManager.onRegularCatch();
-              this.game.consecutivePerfectThrows = 0; // Reset perfect streak
-            }
-
-            if (this.consecutiveHits >= 10) {
-              this.game.unlockAchievement("deadeye");
-            }
+            // Handle all achievement logic
+            this.handleSockballCatch(sockball, catchQuality, isBonusHit);
 
             sockball.active = false;
             return false;
@@ -652,17 +839,69 @@ class ThrowingScreen extends Screen {
 
         sockball.previousDistanceToMartha = currentDistance;
       } else if (sockball.enteredCatchZone) {
-        // Ball left catch zone without being caught - it's a miss
+        // Sockball left the catch zone - if we tracked a best zone, it means it got close enough to count as a catch
+        // This handles cases where the sockball moved through too fast to detect "moving away"
+        if (sockball.bestZoneEntered) {
+          const catchQuality = this.marthaManager.hitBySockball(
+            sockball,
+            sockball.bestZoneEntered,
+            isBonusHit
+          );
+          if (catchQuality) {
+            // Track catch quality counts for score screen
+            if (
+              this.game.catchQualityCounts &&
+              this.game.catchQualityCounts[catchQuality] !== undefined
+            ) {
+              this.game.catchQualityCounts[catchQuality]++;
+            }
+
+            this.game.audioManager.playSound("particle-burst", false, 0.4);
+
+            this.game.audioManager.playSound("points-gained", false, 0.3);
+
+            this.consecutiveHits++;
+
+            // Handle all achievement logic
+            this.handleSockballCatch(sockball, catchQuality, isBonusHit);
+
+            sockball.active = false;
+            return false;
+          }
+        }
+
+        // If we didn't register a hit, count it as a miss
         this.missedThrows++;
         this.consecutiveHits = 0;
 
-        // Track consecutive misses for Butterfingers
         this.game.consecutiveMisses++;
         this.game.consecutivePerfectThrows = 0;
 
-        // Achievement: BUTTERFINGERS (miss 5 throws in a row)
-        if (this.game.consecutiveMisses >= 5) {
+        // Achievement tracking for misses
+        this.game.currentGameMisses++;
+        this.game.totalMisses++;
+
+        if (
+          this.game.consecutiveMisses >=
+          GameConfig.ACHIEVEMENTS.BUTTERFINGERS.threshold
+        ) {
           this.game.unlockAchievement("butterfingers");
+        }
+
+        // Achievement: NO_HOPE - Miss 10 sockballs in a single game
+        if (
+          this.game.currentGameMisses >=
+          GameConfig.ACHIEVEMENTS.NO_HOPE.threshold
+        ) {
+          this.game.unlockAchievement("no_hope");
+        }
+
+        // Achievement: MISS_MISS_MISS - Miss 100 sockballs lifetime
+        if (
+          this.game.totalMisses >=
+          GameConfig.ACHIEVEMENTS.MISS_MISS_MISS.threshold
+        ) {
+          this.game.unlockAchievement("miss_miss_miss");
         }
 
         return false;
@@ -682,11 +921,14 @@ class ThrowingScreen extends Screen {
         this.marthaManager.startExit();
         this.showMessage("Martha got her rent money!", "success", 2000);
 
-        // Phase 2.2 - Trigger level complete feedback
         this.game.feedbackManager.onLevelComplete();
 
-        // Achievement: MARTHAS_FAVORITE (complete level without missing any throws)
-        if (this.missedThrows === 0 && this.sockballsThrown > 0) {
+        // Martha's Favorite achievement: no missed throws on level 9 only
+        if (
+          this.missedThrows === 0 &&
+          this.sockballsThrown > 0 &&
+          this.game.currentLevel === 8
+        ) {
           this.game.unlockAchievement("marthas_favorite");
         }
       }
@@ -695,9 +937,11 @@ class ThrowingScreen extends Screen {
         this.levelComplete = true;
         this.gamePhase = "complete";
 
-        // Fix Bug #5: Set flag BEFORE scheduling timeout to prevent race condition
+        // Save the remaining available sockballs at level completion for score calculation
+        this.game.sockballsLeftoverAtEnd = this.availableSockballs;
+
         if (!this.levelCompleteAudioPlayed) {
-          this.levelCompleteAudioPlayed = true; // Set flag first
+          this.levelCompleteAudioPlayed = true;
           this.game.audioManager.fadeOutMusic(1000);
           const audioTimeoutId = setTimeout(() => {
             this.game.audioManager.playMusic("victory-music", false, 0.4);
@@ -727,10 +971,31 @@ class ThrowingScreen extends Screen {
         this.levelComplete = true;
         this.gamePhase = "complete";
 
-        // Achievement: EVICTION_NOTICE (lose a level)
+        // Save the remaining available sockballs at level completion for score calculation
+        this.game.sockballsLeftoverAtEnd = this.availableSockballs;
+
         this.game.unlockAchievement("eviction_notice");
 
-        // Fix Bug #5: Set flag BEFORE scheduling timeout to prevent race condition
+        // Achievement: FLUBBED_IT - missed on final sockball when it would have won
+        // Only record flub once per level to prevent double counting
+        if (
+          !this.flubRecordedThisLevel &&
+          this.marthaManager.collectedSockballs ===
+            this.marthaManager.sockballsWanted - 1
+        ) {
+          this.flubRecordedThisLevel = true;
+          this.game.unlockAchievement("flubbed_it");
+
+          // Track flubs for FLUB_KING achievement
+          this.game.totalFlubs++;
+
+          // Achievement: FLUB_KING - Flub 5 times lifetime
+          if (
+            this.game.totalFlubs >= GameConfig.ACHIEVEMENTS.FLUB_KING.threshold
+          ) {
+            this.game.unlockAchievement("flub_king");
+          }
+        }
         if (!this.gameOverAudioPlayed) {
           this.gameOverAudioPlayed = true; // Set flag first
           this.game.audioManager.fadeOutMusic(1000);
@@ -766,20 +1031,16 @@ class ThrowingScreen extends Screen {
   }
 
   exitToLevelSelect() {
-    console.log("🚪 Exiting throwing screen to level select");
     this.game.audioManager.playSound("click", false, 0.5);
     this.game.changeGameState("menu");
   }
 
   onUpdate(deltaTime) {
-    // Fix Bug #6: Update parent class timers
     this.updateAnimationTimers(deltaTime);
 
     this.marthaManager.update(deltaTime);
     this.updateSockballs(deltaTime);
     this.checkGameEnd();
-
-    // Phase 2.2 - Update feedback manager
     this.game.feedbackManager.update(deltaTime);
     this.game.feedbackManager.updateMarthaPosition(
       this.marthaManager.x,
@@ -793,9 +1054,19 @@ class ThrowingScreen extends Screen {
       this.canThrow() &&
       (this.mouseX > 0 || this.mouseY > 0 || this.keyboardAimX !== null)
     ) {
-      // Use keyboard aim if active, otherwise use last mouse position
-      const aimX = this.keyboardAimX !== null ? this.keyboardAimX : this.mouseX;
-      const aimY = this.keyboardAimY !== null ? this.keyboardAimY : this.mouseY;
+      // Use controller reticle if visible, otherwise keyboard aim, otherwise mouse position
+      let aimX, aimY;
+      if (this.game.controllerManager?.isReticleVisible()) {
+        const reticlePos = this.game.controllerManager.getReticlePosition();
+        aimX = reticlePos.x;
+        aimY = reticlePos.y;
+      } else if (this.keyboardAimX !== null) {
+        aimX = this.keyboardAimX;
+        aimY = this.keyboardAimY;
+      } else {
+        aimX = this.mouseX;
+        aimY = this.mouseY;
+      }
       this.updateTrajectoryPreview(aimX, aimY);
       this.showTrajectory = true;
     } else if (!this.canThrow()) {
@@ -827,7 +1098,6 @@ class ThrowingScreen extends Screen {
     this.renderLaunchIndicator(ctx);
     this.renderUI(ctx);
 
-    // Phase 2.2 - Render feedback manager (dialogue and celebrations)
     this.game.feedbackManager.render(ctx);
 
     if (this.showingMessage) {
@@ -837,7 +1107,6 @@ class ThrowingScreen extends Screen {
 
   renderBackground(ctx) {
     if (this.backgroundImage) {
-      // Scale background to fill canvas while maintaining aspect ratio
       const canvasAspect =
         this.game.getCanvasWidth() / this.game.getCanvasHeight();
       const imageAspect =
@@ -929,23 +1198,12 @@ class ThrowingScreen extends Screen {
     const pulseScale = this.getPulseScale(0.2);
     const radius = this.game.getScaledValue(20) * pulseScale;
 
-    // Render the next sockball type in the launch indicator FIRST (behind circles)
-    console.log(
-      "Next sockball type:",
-      this.nextSockballType,
-      "Image exists:",
-      this.game.images[`sockball${this.nextSockballType}.png`]
-    );
     if (this.nextSockballType) {
       const sockballImage =
         this.game.images[`sockball${this.nextSockballType}.png`];
       if (sockballImage) {
         const sockballSize =
           this.game.getScaledValue(GameConfig.SOCKBALL_SIZE) * pulseScale;
-        console.log(
-          "Drawing sockball at launch indicator, size:",
-          sockballSize
-        );
         ctx.drawImage(
           sockballImage,
           this.launchPosition.x - sockballSize / 2,
@@ -954,7 +1212,6 @@ class ThrowingScreen extends Screen {
           sockballSize
         );
       } else {
-        console.log("No sockball image, using fallback");
         // Fallback colored circle
         ctx.fillStyle = `hsl(${this.nextSockballType * 60}, 70%, 50%)`;
         ctx.beginPath();
@@ -967,8 +1224,6 @@ class ThrowingScreen extends Screen {
         );
         ctx.fill();
       }
-    } else {
-      console.log("nextSockballType is null/undefined");
     }
 
     // Outer glow ring (transparent)
@@ -983,7 +1238,6 @@ class ThrowingScreen extends Screen {
     );
     ctx.fill();
 
-    // Inner circle ring (only stroke, no fill to not cover sockball)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
     ctx.lineWidth = this.game.getScaledValue(3);
 
@@ -1018,8 +1272,6 @@ class ThrowingScreen extends Screen {
     ctx.stroke();
     ctx.restore();
 
-    // Sockballs counter (left side)
-    // Draw sock icon
     if (this.game.images["icon-sock.png"]) {
       const sockIcon = this.game.images["icon-sock.png"];
       const sockIconHeight = this.game.getScaledValue(40);
@@ -1233,7 +1485,6 @@ class ThrowingScreen extends Screen {
   }
 
   lightenColor(color) {
-    // Simple color lightening - increase opacity or brightness
     return color.replace(/[\d.]+\)$/, (match) => {
       const opacity = parseFloat(match);
       return Math.min(opacity + 0.1, 1.0) + ")";
@@ -1267,5 +1518,66 @@ class ThrowingScreen extends Screen {
       baseline: "middle",
       weight: "bold",
     });
+  }
+
+  // Controller reticle support
+  getInteractiveElements() {
+    const layout = this.layoutCache;
+    const elements = [];
+
+    // Add exit button
+    elements.push({
+      x: layout.exitButtonX - layout.exitButtonWidth / 2,
+      y: layout.exitButtonY - layout.exitButtonHeight / 2,
+      width: layout.exitButtonWidth,
+      height: layout.exitButtonHeight,
+    });
+
+    return elements;
+  }
+
+  handleReticleMove(x, y) {
+    const layout = this.layoutCache;
+
+    // Update exit button hover state
+    this.exitButton.hovered = this.isPointInRect(x, y, {
+      x: layout.exitButtonX - layout.exitButtonWidth / 2,
+      y: layout.exitButtonY - layout.exitButtonHeight / 2,
+      width: layout.exitButtonWidth,
+      height: layout.exitButtonHeight,
+    });
+
+    // Update reticle hover state
+    if (this.game.controllerManager) {
+      this.game.controllerManager.setReticleHoverState(this.exitButton.hovered);
+    }
+  }
+
+  handleReticleAction(x, y) {
+    const layout = this.layoutCache;
+
+    // Check exit button
+    if (
+      this.isPointInRect(x, y, {
+        x: layout.exitButtonX - layout.exitButtonWidth / 2,
+        y: layout.exitButtonY - layout.exitButtonHeight / 2,
+        width: layout.exitButtonWidth,
+        height: layout.exitButtonHeight,
+      })
+    ) {
+      this.exitToLevelSelect();
+      return true;
+    }
+
+    return false;
+  }
+
+  isPointInRect(x, y, rect) {
+    return (
+      x >= rect.x &&
+      x <= rect.x + rect.width &&
+      y >= rect.y &&
+      y <= rect.y + rect.height
+    );
   }
 }

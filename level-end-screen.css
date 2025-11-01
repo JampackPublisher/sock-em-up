@@ -4,7 +4,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background-image: url("images/level-select-bg.png");
+  background-image: url("images/level-select-bg.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -546,7 +546,7 @@
 }
 
 .level-select-screen {
-  background-image: url("images/level-select-bg.png");
+  background-image: url("images/level-select-bg.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

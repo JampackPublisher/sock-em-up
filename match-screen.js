@@ -22,6 +22,9 @@ class MatchScreen extends Screen {
     this.selectedSock = null;
     this.sockSelectedByKeyboard = false;
 
+    // Hover state for socks
+    this.hoveredSock = null;
+
     // Pause button
     this.pauseButton = {
       x: 0,
@@ -40,6 +43,15 @@ class MatchScreen extends Screen {
       hovered: false,
     };
 
+    // Debug button (only visible in DEV_MODE)
+    this.debugButton = {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      hovered: false,
+    };
+
     // Velocity tracking for throwing
     this.dragHistory = [];
     this.maxDragHistoryLength = 5;
@@ -48,6 +60,15 @@ class MatchScreen extends Screen {
 
     // Track active timeouts for cleanup
     this.activeTimeouts = [];
+
+    // Auto-shoot state for holding down on sock pile
+    this.sockPilePressed = false;
+    this.autoShootInterval = null;
+
+    // Track click-only placements for Snappy achievement
+    this.initialMousePos = null;
+    this.wasDragged = false;
+    this.pairPlacementMethods = {}; // Track how each sock in a pair was placed
   }
 
   createLayoutCache() {
@@ -105,6 +126,12 @@ class MatchScreen extends Screen {
       exitButtonY: barY + barHeight / 2,
       exitButtonWidth: this.game.getScaledValue(100),
       exitButtonHeight: this.game.getScaledValue(50),
+
+      // Debug button (below exit button when DEV_MODE is true)
+      debugButtonX: canvasWidth - this.game.getScaledValue(120),
+      debugButtonY: canvasHeight - this.game.getScaledValue(60),
+      debugButtonWidth: this.game.getScaledValue(120),
+      debugButtonHeight: this.game.getScaledValue(40),
     };
   }
 
@@ -131,6 +158,10 @@ class MatchScreen extends Screen {
     this.pulseTimer = 0;
     this.dragHistory = [];
 
+    // Reset auto-shoot state
+    this.sockPilePressed = false;
+    this.stopAutoShoot();
+
     // Reset elapsed time counter and time bonus flag
     this.game.timeElapsed = 0;
     this.game.timeBonusEarned = false;
@@ -141,7 +172,42 @@ class MatchScreen extends Screen {
     this.matchStartTime = Date.now();
     this.levelCompleted = false; // Track if level is completed to stop timer
 
-    this.game.audioManager.playMusic("match-music", true, 0.3);
+    // Reset per-level achievement tracking
+    this.game.currentLevelMismatches = 0;
+    this.game.currentMatchTypeStreak = [];
+    this.pairPlacementMethods = {};
+    this.game.currentGameSnapPlacements = 0;
+
+    // Select matching music based on new game plus level
+    let matchMusicName = "match-music"; // Default for NG+0
+    const currentDifficulty = this.game.currentDifficulty;
+
+    if (currentDifficulty === 1) {
+      matchMusicName = "match-music-1";
+    } else if (currentDifficulty === 2) {
+      matchMusicName = "match-music-2";
+    } else if (currentDifficulty === 3) {
+      matchMusicName = "match-music-3";
+    } else if (currentDifficulty >= 4) {
+      // For NG+4 and beyond, randomly select from all matching music
+      const randomChoice = Math.floor(Math.random() * 4);
+      if (randomChoice === 0) {
+        matchMusicName = "match-music";
+      } else if (randomChoice === 1) {
+        matchMusicName = "match-music-1";
+      } else if (randomChoice === 2) {
+        matchMusicName = "match-music-2";
+      } else {
+        matchMusicName = "match-music-3";
+      }
+    }
+
+    this.game.audioManager.playMusic(matchMusicName, true, 0.3);
+
+    // Unlock the track in audio player
+    if (this.game.levelSelect && this.game.levelSelect.audioPlayer) {
+      this.game.levelSelect.audioPlayer.unlockTrack(matchMusicName);
+    }
   }
 
   cleanup() {
@@ -149,6 +215,9 @@ class MatchScreen extends Screen {
 
     // Clear all active timeouts
     this.clearAllTimeouts();
+
+    // Clear auto-shoot interval
+    this.stopAutoShoot();
 
     // Reset canvas transform in case shake is still active
     if (this.game.canvas) {
@@ -395,20 +464,7 @@ class MatchScreen extends Screen {
   onMouseDown(x, y) {
     const layout = this.layoutCache;
 
-    // Check exit button click
-    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
-    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
-    if (
-      x >= exitButtonLeft &&
-      x <= exitButtonLeft + layout.exitButtonWidth &&
-      y >= exitButtonTop &&
-      y <= exitButtonTop + layout.exitButtonHeight
-    ) {
-      this.exitToLevelSelect();
-      return true;
-    }
-
-    // Check pause button click
+    // Check pause button click (always allow)
     const pauseButtonLeft = layout.pauseButtonX - layout.pauseButtonWidth / 2;
     const pauseButtonTop = layout.pauseButtonY - layout.pauseButtonHeight / 2;
     if (
@@ -421,13 +477,43 @@ class MatchScreen extends Screen {
       return true;
     }
 
-    // Prevent interaction when paused
+    // Prevent all other interactions when paused (exit button, sock pile, socks)
     if (this.isPaused) {
       return false;
     }
 
+    // Check exit button click (only when not paused)
+    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
+    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
+    if (
+      x >= exitButtonLeft &&
+      x <= exitButtonLeft + layout.exitButtonWidth &&
+      y >= exitButtonTop &&
+      y <= exitButtonTop + layout.exitButtonHeight
+    ) {
+      this.exitToLevelSelect();
+      return true;
+    }
+
+    // Check debug button click (only when not paused and DEV_MODE is true)
+    if (GameConfig.DEV_MODE) {
+      const debugButtonLeft = layout.debugButtonX - layout.debugButtonWidth / 2;
+      const debugButtonTop = layout.debugButtonY - layout.debugButtonHeight / 2;
+      if (
+        x >= debugButtonLeft &&
+        x <= debugButtonLeft + layout.debugButtonWidth &&
+        y >= debugButtonTop &&
+        y <= debugButtonTop + layout.debugButtonHeight
+      ) {
+        this.matchAllSocks();
+        return true;
+      }
+    }
+
     if (this.sockManager.checkSockPileClick(x, y)) {
-      this.shootSockFromPile();
+      this.sockPilePressed = true;
+      this.shootSockFromPile(); // Shoot immediately on first click
+      this.startAutoShoot(); // Start auto-shooting after a delay
       return true;
     }
 
@@ -440,6 +526,10 @@ class MatchScreen extends Screen {
       this.draggedSock = sock;
       this.dragOffset = { x: x - sock.x, y: y - sock.y };
       this.isDragging = true;
+
+      // Track initial position for click-only detection
+      this.initialMousePos = { x: x, y: y };
+      this.wasDragged = false;
 
       // Initialize drag history for velocity tracking
       this.dragHistory = [
@@ -464,16 +554,7 @@ class MatchScreen extends Screen {
   onMouseMove(x, y) {
     const layout = this.layoutCache;
 
-    // Update exit button hover
-    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
-    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
-    this.exitButton.hovered =
-      x >= exitButtonLeft &&
-      x <= exitButtonLeft + layout.exitButtonWidth &&
-      y >= exitButtonTop &&
-      y <= exitButtonTop + layout.exitButtonHeight;
-
-    // Update pause button hover
+    // Update pause button hover (always allow hover for pause/resume)
     const pauseButtonLeft = layout.pauseButtonX - layout.pauseButtonWidth / 2;
     const pauseButtonTop = layout.pauseButtonY - layout.pauseButtonHeight / 2;
     this.pauseButton.hovered =
@@ -482,9 +563,39 @@ class MatchScreen extends Screen {
       y >= pauseButtonTop &&
       y <= pauseButtonTop + layout.pauseButtonHeight;
 
-    // Don't allow dragging when paused
+    // Don't allow exit button hover, dragging, or sock pile hover when paused
     if (this.isPaused) {
+      this.exitButton.hovered = false;
+      this.sockPileHover = false;
       return;
+    }
+
+    // Update exit button hover (only when not paused)
+    const exitButtonLeft = layout.exitButtonX - layout.exitButtonWidth / 2;
+    const exitButtonTop = layout.exitButtonY - layout.exitButtonHeight / 2;
+    this.exitButton.hovered =
+      x >= exitButtonLeft &&
+      x <= exitButtonLeft + layout.exitButtonWidth &&
+      y >= exitButtonTop &&
+      y <= exitButtonTop + layout.exitButtonHeight;
+
+    // Update debug button hover (only when not paused and DEV_MODE is true)
+    if (GameConfig.DEV_MODE) {
+      const debugButtonLeft = layout.debugButtonX - layout.debugButtonWidth / 2;
+      const debugButtonTop = layout.debugButtonY - layout.debugButtonHeight / 2;
+      this.debugButton.hovered =
+        x >= debugButtonLeft &&
+        x <= debugButtonLeft + layout.debugButtonWidth &&
+        y >= debugButtonTop &&
+        y <= debugButtonTop + layout.debugButtonHeight;
+    } else {
+      this.debugButton.hovered = false;
+    }
+
+    // If sock pile is pressed but mouse moved away from it, stop auto-shooting
+    if (this.sockPilePressed && !this.sockManager.checkSockPileClick(x, y)) {
+      this.sockPilePressed = false;
+      this.stopAutoShoot();
     }
 
     if (this.draggedSock) {
@@ -492,6 +603,16 @@ class MatchScreen extends Screen {
       this.draggedSock.y = y - this.dragOffset.y;
       this.draggedSock.vx = 0;
       this.draggedSock.vy = 0;
+
+      // Check if mouse moved significantly (more than 5 pixels) - if so, it's a drag
+      if (this.initialMousePos && !this.wasDragged) {
+        const dx = x - this.initialMousePos.x;
+        const dy = y - this.initialMousePos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > 5) {
+          this.wasDragged = true;
+        }
+      }
 
       // Track drag history for velocity calculation
       const currentTime = Date.now();
@@ -520,14 +641,16 @@ class MatchScreen extends Screen {
 
   updateCursor(x, y) {
     // Check if hovering over buttons
-    const isButtonHovered = this.pauseButton.hovered || this.exitButton.hovered;
+    const isButtonHovered = this.pauseButton.hovered || this.exitButton.hovered || this.debugButton.hovered;
 
-    // Check if hovering over sock pile
-    const isSockPileHovered = this.sockPileHover;
+    // Check if hovering over sock pile (only when not paused)
+    const isSockPileHovered = !this.isPaused && this.sockPileHover;
 
-    // Check if hovering over a sock
+    // Check if hovering over a sock (only when not paused)
     const isSockHovered =
-      !this.isDragging && this.sockManager.getSockAt(x, y) !== null;
+      !this.isPaused &&
+      !this.isDragging &&
+      this.sockManager.getSockAt(x, y) !== null;
 
     // Set cursor based on what's being hovered/interacted with
     if (this.isDragging) {
@@ -582,10 +705,16 @@ class MatchScreen extends Screen {
     this.sockPileHover = this.sockManager.checkSockPileClick(x, y);
     this.dropZoneHover = null;
 
+    // Update hovered sock (only when not dragging)
+    if (!this.draggedSock) {
+      this.hoveredSock = this.sockManager.getSockAt(x, y);
+    } else {
+      this.hoveredSock = null;
+    }
+
     if (this.draggedSock) {
       const snapDistance = this.game.getScaledValue(80);
 
-      // Fix Bug #7: Find the closest zone and break after finding first match
       for (const zone of this.dropZones) {
         const distance = this.physics.getDropZoneDistance(
           this.draggedSock,
@@ -600,6 +729,12 @@ class MatchScreen extends Screen {
   }
 
   onMouseUp() {
+    // Stop auto-shooting when mouse is released
+    if (this.sockPilePressed) {
+      this.sockPilePressed = false;
+      this.stopAutoShoot();
+    }
+
     if (!this.draggedSock) return;
 
     const sock = this.draggedSock;
@@ -615,6 +750,13 @@ class MatchScreen extends Screen {
           this.physics.snapToDropZone(sock, zone);
           snapped = true;
           this.createSnapEffect(zone);
+
+          // Track placement method for Snappy achievement
+          const placementMethod = this.wasDragged ? 'drag' : 'click';
+          if (!this.pairPlacementMethods[zone.pairId]) {
+            this.pairPlacementMethods[zone.pairId] = [];
+          }
+          this.pairPlacementMethods[zone.pairId].push(placementMethod);
         } else {
           // Zone occupied, throw the sock with calculated velocity
           const throwVelocity = this.calculateThrowVelocity();
@@ -628,6 +770,11 @@ class MatchScreen extends Screen {
       const throwVelocity = this.calculateThrowVelocity();
       this.physics.applySockThrow(sock, throwVelocity);
 
+      // Achievement: MOMENTUM_KILLER - Break a 15+ match streak
+      if (this.matchStreak >= GameConfig.ACHIEVEMENTS.MOMENTUM_KILLER.threshold) {
+        this.game.unlockAchievement("momentum_killer");
+      }
+
       // Break streak when dropping a sock without placing it
       this.matchStreak = 0;
       this.lastMatchTime = 0;
@@ -637,12 +784,37 @@ class MatchScreen extends Screen {
     this.isDragging = false;
     this.dropZoneHover = null;
     this.dragHistory = [];
+    this.initialMousePos = null;
+    this.wasDragged = false;
     this.checkForMatches();
+  }
+
+  startAutoShoot() {
+    // Clear any existing interval
+    this.stopAutoShoot();
+
+    // Start auto-shooting after a short delay, then every 100ms
+    this.autoShootInterval = setInterval(() => {
+      if (this.sockPilePressed && !this.isPaused) {
+        this.shootSockFromPile();
+      }
+    }, 100); // 0.1 seconds = 100 milliseconds
+  }
+
+  stopAutoShoot() {
+    if (this.autoShootInterval) {
+      clearInterval(this.autoShootInterval);
+      this.autoShootInterval = null;
+    }
   }
 
   shootSockFromPile() {
     const newSock = this.sockManager.shootSockFromPile();
-    if (!newSock) return;
+    if (!newSock) {
+      // No more socks to shoot, stop auto-shooting
+      this.stopAutoShoot();
+      return;
+    }
 
     // Mark sock pile as clicked
     if (!this.sockPileClicked) {
@@ -654,9 +826,54 @@ class MatchScreen extends Screen {
   }
 
   exitToLevelSelect() {
-    console.log("🚪 Exiting match screen to level select");
     this.game.audioManager.playSound("click", false, 0.5);
     this.game.changeGameState("menu");
+  }
+
+  matchAllSocks() {
+    // Debug function to instantly match all socks
+    this.game.audioManager.playSound("click", false, 0.5);
+
+    // Get all remaining socks
+    const level = GameConfig.LEVELS[this.game.currentLevel];
+    if (!level) return;
+
+    // Calculate how many pairs we need to make
+    const pairsNeeded = level.sockPairs - this.game.sockBalls;
+
+    // Match pairs by taking socks from the pile
+    for (let i = 0; i < pairsNeeded; i++) {
+      if (this.sockManager.sockList.length >= 2) {
+        // Get the sock type from the sock list
+        const sockType = this.sockManager.sockList[0];
+
+        // Remove two socks from the pile
+        this.sockManager.sockList.shift();
+        this.sockManager.sockList.shift();
+
+        // Directly increment sockballs count
+        this.game.sockBalls++;
+
+        // Add sockball to the game's sockball queue for throwing
+        this.game.sockballQueue.push(sockType);
+
+        // Play match sound
+        if (i === 0) {
+          this.game.audioManager.playSound("easter-egg-match", false, 0.5);
+        }
+      }
+    }
+
+    // Mark level as completed
+    this.levelCompleted = true;
+
+    // Start throwing phase
+    const timeoutId = setTimeout(() => {
+      if (this.game.gameState === "matching") {
+        this.game.startThrowingPhase();
+      }
+    }, 500);
+    this.activeTimeouts.push(timeoutId);
   }
 
   createSnapEffect(zone) {
@@ -668,41 +885,62 @@ class MatchScreen extends Screen {
 
   checkForMatches() {
     const currentTime = Date.now();
-    console.log(
-      "🔍 checkForMatches called, DROP_TARGET_PAIRS:",
-      GameConfig.DROP_TARGET_PAIRS
-    );
 
     for (let pairId = 0; pairId < GameConfig.DROP_TARGET_PAIRS; pairId++) {
       const pairZones = this.dropZones.filter((zone) => zone.pairId === pairId);
-      console.log(
-        `  Pair ${pairId}: ${pairZones.length} zones, sock1:`,
-        pairZones[0]?.sock,
-        "sock2:",
-        pairZones[1]?.sock
-      );
 
       if (pairZones.length === 2 && pairZones[0].sock && pairZones[1].sock) {
-        console.log(
-          `  ✓ Both zones have socks, types: ${pairZones[0].sock.type} vs ${pairZones[1].sock.type}`
-        );
         if (pairZones[0].sock.type === pairZones[1].sock.type) {
-          // MATCH - track the sock type for sockball creation
           const matchedSockType = pairZones[0].sock.type;
-          console.log(`  ✅ MATCH DETECTED! Type: ${matchedSockType}`);
-
-          // Add this sockball type to the game's sockball queue
-          console.log(
-            `  📦 About to call addSockballToQueue(${matchedSockType})`
-          );
           this.game.addSockballToQueue(matchedSockType);
 
-          // Play match sound
+          // Track sock type streak for "One at a Time" achievement
+          this.game.currentMatchTypeStreak.push(matchedSockType);
+
+          // Check if the last 4 matches were all the same type
+          if (this.game.currentMatchTypeStreak.length >= GameConfig.ACHIEVEMENTS.ONE_AT_A_TIME.threshold) {
+            const lastFour = this.game.currentMatchTypeStreak.slice(-GameConfig.ACHIEVEMENTS.ONE_AT_A_TIME.threshold);
+            const allSameType = lastFour.every(type => type === lastFour[0]);
+            if (allSameType) {
+              this.game.unlockAchievement("one_at_a_time");
+            }
+          }
+
+          // Achievement: SNAPPY & PURE_SNAP - Check sock placement methods
+          if (this.pairPlacementMethods[pairId] && this.pairPlacementMethods[pairId].length === 2) {
+            const hasClickPlacement = this.pairPlacementMethods[pairId].includes('click');
+            const allClickPlacements = this.pairPlacementMethods[pairId].every(method => method === 'click');
+
+            if (hasClickPlacement) {
+              this.game.unlockAchievement("snappy");
+
+              // Achievement: PURE_SNAP - Both socks placed without dragging
+              if (allClickPlacements) {
+                this.game.unlockAchievement("pure_snap");
+              }
+
+              // Increment snap counters
+              this.game.currentGameSnapPlacements++;
+              this.game.totalSnapPlacements++;
+
+              // Achievement: DOUBLE_SNAP - 2 snaps in one game
+              if (this.game.currentGameSnapPlacements >= GameConfig.ACHIEVEMENTS.DOUBLE_SNAP.threshold) {
+                this.game.unlockAchievement("double_snap");
+              }
+
+              // Achievement: SNAP_MASTER - 10 total snaps
+              if (this.game.totalSnapPlacements >= GameConfig.ACHIEVEMENTS.SNAP_MASTER.threshold) {
+                this.game.unlockAchievement("snap_master");
+              }
+            }
+          }
+
+          // Clear the placement tracking for this pair
+          delete this.pairPlacementMethods[pairId];
+
           this.game.audioManager.playSound("easter-egg-match", false, 0.5);
 
-          // Play points gained sound with slight delay
           const timeoutId = setTimeout(() => {
-            // Fix Bug #4: Guard clause to prevent execution after screen cleanup
             if (this.game.gameState !== "matching") return;
             this.game.audioManager.playSound("points-gained", false, 0.4);
           }, 500);
@@ -721,10 +959,10 @@ class MatchScreen extends Screen {
             this.game.unlockAchievement("first_match");
           }
 
-          // Achievement: QUICK_HANDS (5 pairs in 15 seconds)
-          if (this.matchCount === 5) {
+          // Achievement: QUICK_HANDS
+          if (this.matchCount === GameConfig.ACHIEVEMENTS.QUICK_HANDS.pairs) {
             const timeElapsed = (currentTime - this.matchStartTime) / 1000;
-            if (timeElapsed <= 15) {
+            if (timeElapsed <= GameConfig.ACHIEVEMENTS.QUICK_HANDS.timeLimit) {
               this.game.unlockAchievement("quick_hands");
             }
           }
@@ -733,22 +971,19 @@ class MatchScreen extends Screen {
           this.matchStreak++;
           this.lastMatchTime = currentTime;
 
-          // Achievement: STREAK_KING (5x match streak)
-          if (this.matchStreak >= 5) {
+          // Achievement: STREAK_KING
+          if (this.matchStreak >= GameConfig.ACHIEVEMENTS.STREAK_KING.threshold) {
             this.game.unlockAchievement("streak_king");
           }
 
-          // Achievement: COMBO_MASTER (10x match streak)
-          if (this.matchStreak >= 10) {
+          // Achievement: COMBO_MASTER
+          if (this.matchStreak >= GameConfig.ACHIEVEMENTS.COMBO_MASTER.threshold) {
             this.game.unlockAchievement("combo_master");
           }
 
           // Screen shake effect
           this.createScreenShake();
 
-          // Check if we've completed the required number of matches (stop timer immediately)
-          // Count: queued (waiting for animation) + animating + completed
-          // Queue is now properly managed - items removed when animation starts
           const level = GameConfig.LEVELS[this.game.currentLevel];
           const completedSockballs = this.game.sockBalls;
           const queuedSockballs = this.game.getSockballQueueLength();
@@ -757,46 +992,47 @@ class MatchScreen extends Screen {
           const totalSockballs =
             completedSockballs + queuedSockballs + animatingSockballs;
 
-          console.log(
-            `🔍 Sockball count - Completed: ${completedSockballs}, Queued: ${queuedSockballs}, Animating: ${animatingSockballs}, Total: ${totalSockballs}/${level.sockPairs}`
-          );
-
           if (level && totalSockballs >= level.sockPairs) {
-            // Mark level as completed to stop the timer
             if (!this.levelCompleted) {
               this.levelCompleted = true;
 
-              // Check if player finished within the time limit for time bonus
-              const timeLimit = level.matchingTime;
+              const timeLimit = this.game.matchingTime;
               const timeElapsed = Math.floor(this.game.timeElapsed);
               const timeRemaining = timeLimit - timeElapsed;
 
               if (timeElapsed <= timeLimit) {
-                // Set time bonus flag - this will double rent payment points on level end screen
                 this.game.timeBonusEarned = true;
-                console.log(
-                  `⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`
-                );
               }
 
-              // Achievement: SPEEDY_MATCHER (complete with 30+ seconds remaining)
-              if (timeRemaining >= 30) {
+              // Achievement: PERFECT_TIMING (finish with exactly 0 seconds left)
+              if (timeRemaining === 0 && timeElapsed === timeLimit) {
+                this.game.unlockAchievement("perfect_timing");
+              }
+
+              // Achievement: SPEEDY_MATCHER
+              if (timeRemaining >= GameConfig.ACHIEVEMENTS.SPEEDY_MATCHER.threshold) {
                 this.game.unlockAchievement("speedy_matcher");
               }
 
-              // Achievement: SPEED_DEMON (match all socks in under 10 seconds)
-              if (timeElapsed < 10) {
+              // Achievement: SPEED_DEMON
+              if (timeRemaining >= GameConfig.ACHIEVEMENTS.SPEED_DEMON.threshold) {
                 this.game.unlockAchievement("speed_demon");
               }
             }
           }
         } else {
-          // MISMATCH - new behavior
           this.handleMismatch(pairZones[0].sock, pairZones[1].sock);
           pairZones[0].sock = null;
           pairZones[1].sock = null;
 
-          // Reset streak on mismatch
+          // Clear placement tracking for this pair on mismatch
+          delete this.pairPlacementMethods[pairId];
+
+          // Achievement: MOMENTUM_KILLER - Break a 15+ match streak
+          if (this.matchStreak >= GameConfig.ACHIEVEMENTS.MOMENTUM_KILLER.threshold) {
+            this.game.unlockAchievement("momentum_killer");
+          }
+
           this.matchStreak = 0;
           this.lastMatchTime = 0;
         }
@@ -808,11 +1044,27 @@ class MatchScreen extends Screen {
     // Play mismatch sound
     this.game.audioManager.playSound("easter-egg-mismatch", false, 0.6);
 
+    // Track mismatches for achievements
+    this.game.currentLevelMismatches++;
+    this.game.lifetimeMismatches++;
+
+    // Achievement: MISMATCHED - First mismatch ever
+    this.game.unlockAchievement("mismatched");
+
+    // Achievement: MISMATCH_CHAOS - 5 mismatches in a single level
+    if (this.game.currentLevelMismatches >= GameConfig.ACHIEVEMENTS.MISMATCH_CHAOS.threshold) {
+      this.game.unlockAchievement("mismatch_chaos");
+    }
+
+    // Achievement: MISMATCH_QUEEN - 25 lifetime mismatches
+    if (this.game.lifetimeMismatches >= GameConfig.ACHIEVEMENTS.MISMATCH_QUEEN.threshold) {
+      this.game.unlockAchievement("mismatch_queen");
+    }
+
     // Create mismatch particle effects
     this.sockManager.createMismatchEffect(sock1, sock2);
 
-    // Throw both socks in random directions with more force
-    const throwForce = 12; // Stronger than normal throws
+    const throwForce = 20;
 
     this.physics.applySockThrow(sock1, {
       x: (Math.random() - 0.5) * throwForce,
@@ -889,15 +1141,12 @@ class MatchScreen extends Screen {
   }
 
   onUpdate(deltaTime) {
-    // Fix Bug #6: Update parent class timers
     this.updateAnimationTimers(deltaTime);
 
-    // Update pulse timer for sock pile animation
     if (!this.sockPileClicked) {
       this.pulseTimer += deltaTime * 0.005; // Slow pulse
     }
 
-    // Count UP (elapsed time) - only if pile has been clicked, not paused, and level not completed
     if (this.sockPileClicked && !this.isPaused && !this.levelCompleted) {
       const timeIncrement = deltaTime / 1000; // Convert milliseconds to seconds
       this.game.timeElapsed += timeIncrement;
@@ -922,7 +1171,6 @@ class MatchScreen extends Screen {
       if (zone.hoverEffect > 0) zone.hoverEffect--;
     });
 
-    // Fix Bug #10: Add bounds checking for level access
     const level = GameConfig.LEVELS[this.game.currentLevel];
     if (!level) return; // Guard clause
 
@@ -933,21 +1181,15 @@ class MatchScreen extends Screen {
       // Mark level as completed to stop the timer
       this.levelCompleted = true;
 
-      // Check if player finished within the time limit for time bonus
-      const timeLimit = level.matchingTime;
+      const timeLimit = this.game.matchingTime;
       const timeElapsed = Math.floor(this.game.timeElapsed);
       const timeRemaining = timeLimit - timeElapsed;
 
       if (timeElapsed <= timeLimit) {
-        // Set time bonus flag - this will double rent payment points on level end screen
         this.game.timeBonusEarned = true;
-        console.log(
-          `⏱️ Time bonus earned! Finished in ${timeElapsed}s (limit: ${timeLimit}s)`
-        );
       }
 
-      // Achievement: SPEEDY_MATCHER (complete with 30+ seconds remaining)
-      if (timeRemaining >= 30) {
+      if (timeRemaining >= GameConfig.ACHIEVEMENTS.SPEEDY_MATCHER.threshold) {
         this.game.unlockAchievement("speedy_matcher");
       }
 
@@ -956,7 +1198,6 @@ class MatchScreen extends Screen {
   }
 
   onRender(ctx) {
-    // Apply pulse effect to sock pile if not clicked yet
     if (!this.sockPileClicked) {
       this.sockManager.sockPile.pulseEffect = this.pulseTimer;
     } else {
@@ -966,19 +1207,13 @@ class MatchScreen extends Screen {
     this.sockManager.renderSockPile(ctx);
     this.renderDropZonePairBoxes(ctx);
     this.renderDropZones(ctx);
-    this.sockManager.renderSocks(ctx);
-
-    if (this.draggedSock) {
-      this.renderDraggedSock(ctx);
-    }
+    this.sockManager.renderSocks(ctx, this.hoveredSock, this.draggedSock);
 
     this.sockManager.renderParticleEffects(ctx);
     this.renderMatchScreenUI(ctx);
 
-    // Render sockball animations AFTER the top bar so they appear above it
     this.sockManager.renderSockballAnimations(ctx);
 
-    // Render feedback manager for achievement toasts
     this.game.feedbackManager.render(ctx);
   }
 
@@ -988,7 +1223,6 @@ class MatchScreen extends Screen {
     const margin = this.game.getScaledValue(50);
     const cornerRadius = this.game.getScaledValue(10); // Reduced from 15 to 10
 
-    // Color themes for each pair (soft, pastel colors)
     const pairColors = [
       {
         bg: "rgba(255, 182, 193, 0.15)",
@@ -1024,7 +1258,6 @@ class MatchScreen extends Screen {
 
         ctx.save();
 
-        // Draw rounded rectangle background with gradient
         const gradient = ctx.createLinearGradient(minX, minY, minX, maxY);
         gradient.addColorStop(0, colors.bg);
         gradient.addColorStop(1, "rgba(0, 0, 0, 0.05)");
@@ -1033,7 +1266,6 @@ class MatchScreen extends Screen {
         this.roundRect(ctx, minX, minY, width, height, cornerRadius);
         ctx.fill();
 
-        // Draw solid border (no dashes)
         ctx.strokeStyle = colors.border;
         ctx.lineWidth = lineWidth;
         ctx.setLineDash([]); // Solid line
@@ -1045,7 +1277,6 @@ class MatchScreen extends Screen {
     }
   }
 
-  // Helper method to draw rounded rectangles
   roundRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -1064,7 +1295,7 @@ class MatchScreen extends Screen {
     const lineWidth = this.game.getScaledValue(2);
     const hoverLineWidth = this.game.getScaledValue(3);
     const shadowBlur = this.game.getScaledValue(15);
-    const cornerRadius = this.game.getScaledValue(10); // Match pair box corner radius
+    const cornerRadius = this.game.getScaledValue(10);
 
     this.dropZones.forEach((zone, index) => {
       ctx.save();
@@ -1111,20 +1342,6 @@ class MatchScreen extends Screen {
 
       ctx.restore();
     });
-  }
-
-  renderDraggedSock(ctx) {
-    if (!this.draggedSock) return;
-
-    const lineWidth = this.game.getScaledValue(3);
-    const shadowBlur = this.game.getScaledValue(15);
-    const borderOffset = this.game.getScaledValue(2);
-
-    ctx.save();
-    ctx.shadowColor = "yellow";
-    ctx.shadowBlur = shadowBlur;
-
-    ctx.restore();
   }
 
   renderMatchScreenUI(ctx) {
@@ -1257,7 +1474,7 @@ class MatchScreen extends Screen {
     // Get level data once for the entire top bar
     const level = GameConfig.LEVELS[this.game.currentLevel];
     const totalSockballs = level ? level.sockPairs : 0;
-    const timeLimit = level ? level.matchingTime : 60;
+    const timeLimit = this.game.matchingTime;
 
     // Draw top bar background
     ctx.save();
@@ -1407,6 +1624,20 @@ class MatchScreen extends Screen {
       this.exitButton.hovered,
       "rgba(180, 40, 40, 0.8)"
     );
+
+    // Debug button (only visible in DEV_MODE)
+    if (GameConfig.DEV_MODE) {
+      this.renderBottomBarButton(
+        ctx,
+        layout.debugButtonX,
+        layout.debugButtonY,
+        layout.debugButtonWidth,
+        layout.debugButtonHeight,
+        "Match All",
+        this.debugButton.hovered,
+        "rgba(255, 0, 255, 0.8)"
+      );
+    }
   }
 
   renderBottomBarButton(ctx, x, y, width, height, text, isHovered, baseColor) {
@@ -1511,6 +1742,236 @@ class MatchScreen extends Screen {
     }
 
     ctx.restore();
+  }
+
+  // Controller reticle support
+  getInteractiveElements() {
+    const layout = this.layoutCache;
+    const elements = [];
+
+    // Add pause button (always interactable)
+    elements.push({
+      x: layout.pauseButtonX - layout.pauseButtonWidth / 2,
+      y: layout.pauseButtonY - layout.pauseButtonHeight / 2,
+      width: layout.pauseButtonWidth,
+      height: layout.pauseButtonHeight
+    });
+
+    // Don't add other elements when paused
+    if (this.isPaused) {
+      return elements;
+    }
+
+    // Add exit button (only when not paused)
+    elements.push({
+      x: layout.exitButtonX - layout.exitButtonWidth / 2,
+      y: layout.exitButtonY - layout.exitButtonHeight / 2,
+      width: layout.exitButtonWidth,
+      height: layout.exitButtonHeight
+    });
+
+    // Add sock pile
+    if (this.sockManager.sockPile && this.sockManager.sockList.length > 0) {
+      const sockPile = this.sockManager.sockPile;
+      elements.push({
+        x: sockPile.x - sockPile.width / 2,
+        y: sockPile.y - sockPile.height / 2,
+        width: sockPile.width,
+        height: sockPile.height
+      });
+    }
+
+    // Add all active socks
+    this.sockManager.socks.forEach((sock) => {
+      if (sock.active && !this.sockManager.isSockInAnimation(sock)) {
+        const sockSize = this.game.getScaledValue(40);
+        elements.push({
+          x: sock.x - sockSize / 2,
+          y: sock.y - sockSize / 2,
+          width: sockSize,
+          height: sockSize
+        });
+      }
+    });
+
+    return elements;
+  }
+
+  handleReticleMove(x, y) {
+    const layout = this.layoutCache;
+
+    // If dragging a sock, move it with the reticle
+    if (this.draggedSock && !this.isPaused) {
+      this.draggedSock.x = x - this.dragOffset.x;
+      this.draggedSock.y = y - this.dragOffset.y;
+      this.draggedSock.vx = 0;
+      this.draggedSock.vy = 0;
+
+      // Check if reticle moved significantly - if so, it's a drag
+      if (this.initialMousePos && !this.wasDragged) {
+        const dx = x - this.initialMousePos.x;
+        const dy = y - this.initialMousePos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > 5) {
+          this.wasDragged = true;
+        }
+      }
+
+      // Track drag history for velocity calculation
+      const currentTime = Date.now();
+      this.dragHistory.push({
+        x: x,
+        y: y,
+        timestamp: currentTime,
+      });
+
+      // Keep only recent history
+      if (this.dragHistory.length > this.maxDragHistoryLength) {
+        this.dragHistory.shift();
+      }
+
+      // Remove old entries (older than 150ms)
+      this.dragHistory = this.dragHistory.filter(
+        (entry) => currentTime - entry.timestamp < 150
+      );
+
+      // Update hover effects for drop zones
+      this.updateHoverEffects(x, y);
+    }
+
+    // Update pause button hover state (always allow for pause/resume)
+    this.pauseButton.hovered = this.isPointInRect(x, y, {
+      x: layout.pauseButtonX - layout.pauseButtonWidth / 2,
+      y: layout.pauseButtonY - layout.pauseButtonHeight / 2,
+      width: layout.pauseButtonWidth,
+      height: layout.pauseButtonHeight
+    });
+
+    // Don't allow other hovers when paused
+    if (this.isPaused) {
+      this.exitButton.hovered = false;
+      this.sockPileHover = false;
+      this.hoveredSock = null;
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(this.pauseButton.hovered);
+      }
+      return;
+    }
+
+    // Update exit button hover state (only when not paused)
+    this.exitButton.hovered = this.isPointInRect(x, y, {
+      x: layout.exitButtonX - layout.exitButtonWidth / 2,
+      y: layout.exitButtonY - layout.exitButtonHeight / 2,
+      width: layout.exitButtonWidth,
+      height: layout.exitButtonHeight
+    });
+
+    // Update sock pile hover state
+    this.sockPileHover = this.sockManager.checkSockPileClick(x, y);
+
+    // Update hovered sock (only when not dragging)
+    if (!this.draggedSock) {
+      this.hoveredSock = this.sockManager.getSockAt(x, y);
+    } else {
+      this.hoveredSock = null;
+    }
+
+    // Update reticle hover state - hovering over any interactive element
+    const isHovering = this.pauseButton.hovered || this.exitButton.hovered ||
+                       this.sockPileHover || this.hoveredSock !== null ||
+                       this.draggedSock !== null;
+    if (this.game.controllerManager) {
+      this.game.controllerManager.setReticleHoverState(isHovering);
+    }
+  }
+
+  handleReticleAction(x, y) {
+    const layout = this.layoutCache;
+
+    // Check pause button
+    if (this.isPointInRect(x, y, {
+      x: layout.pauseButtonX - layout.pauseButtonWidth / 2,
+      y: layout.pauseButtonY - layout.pauseButtonHeight / 2,
+      width: layout.pauseButtonWidth,
+      height: layout.pauseButtonHeight
+    })) {
+      this.togglePause();
+      return true;
+    }
+
+    // Prevent other interactions when paused
+    if (this.isPaused) {
+      return false;
+    }
+
+    // Check exit button
+    if (this.isPointInRect(x, y, {
+      x: layout.exitButtonX - layout.exitButtonWidth / 2,
+      y: layout.exitButtonY - layout.exitButtonHeight / 2,
+      width: layout.exitButtonWidth,
+      height: layout.exitButtonHeight
+    })) {
+      this.exitToLevelSelect();
+      return true;
+    }
+
+    // If already dragging a sock, release it (place or throw)
+    if (this.draggedSock) {
+      this.onMouseUp();
+      return true;
+    }
+
+    // Check sock pile
+    if (this.sockManager.checkSockPileClick(x, y)) {
+      this.sockPilePressed = true;
+      this.shootSockFromPile();
+      this.startAutoShoot(); // Start auto-shooting after initial shot
+      return true;
+    }
+
+    // Check for sock click (to start dragging/selecting)
+    const sock = this.sockManager.getSockAt(x, y);
+    if (sock) {
+      this.draggedSock = sock;
+      this.dragOffset = { x: x - sock.x, y: y - sock.y };
+      this.isDragging = true;
+
+      // Track initial position for click-only detection
+      this.initialMousePos = { x: x, y: y };
+      this.wasDragged = false;
+
+      // Initialize drag history for velocity tracking
+      this.dragHistory = [
+        {
+          x: x,
+          y: y,
+          timestamp: Date.now(),
+        },
+      ];
+
+      this.dropZones.forEach((zone) => {
+        if (zone.sock === sock) {
+          zone.sock = null;
+        }
+      });
+
+      return true;
+    }
+
+    return false;
+  }
+
+  handleReticleRelease(x, y) {
+    // Stop auto-shooting when button is released
+    if (this.sockPilePressed) {
+      this.sockPilePressed = false;
+      this.stopAutoShoot();
+    }
+  }
+
+  isPointInRect(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.width &&
+           y >= rect.y && y <= rect.y + rect.height;
   }
 
   renderPauseOverlay(ctx) {

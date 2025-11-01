@@ -51,6 +51,9 @@ class LevelSelect extends Screen {
     this.currentSockType = 1;
     this.dropZoneHover = null;
 
+    // Hover state for menu socks
+    this.hoveredMenuSock = null;
+
     // Logo click effect
     this.logoPressed = false;
     this.logoPressTimer = 0;
@@ -118,6 +121,19 @@ class LevelSelect extends Screen {
     this.creditsModal = null;
     this.creditsEventHandlers = null;
 
+    // Animation speed constants
+    this.ANIMATION_SPEED = 0.008; // Hover, button, and drawer animations
+    this.PULSE_SPEED = 0.005; // YOU_WIN pulse animation
+    this.WIGGLE_SPEED = 0.01; // Level button wiggle (also in levelConfig)
+    this.PULSE_UPDATE_SPEED = 0.002; // Level pulse timer update
+    this.TIME_MULTIPLIER_BASE = 16.67; // Based on 60 FPS
+    this.ROTATION_VELOCITY_THRESHOLD = 0.01; // Minimum rotation speed before stopping
+
+    // Press animation constants
+    this.PRESS_DURATION = 150; // Logo press duration in milliseconds
+    this.PRESS_MIN_SCALE = 0.95; // Minimum scale during press
+    this.PRESS_SCALE_RANGE = 0.05; // Range of scale change (max - min)
+
     // Physics for menu socks
     this.menuPhysics = {
       friction: 0.992,
@@ -179,6 +195,18 @@ class LevelSelect extends Screen {
     this.videoPlayerActive = false;
     this.videoElement = null;
 
+    // Audio player button
+    this.audioPlayerButton = {
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 40,
+      hovered: false,
+    };
+
+    // Initialize audio player
+    this.audioPlayer = new AudioPlayer(this.game);
+
     // Achievements drawer
     this.achievementsDrawer = {
       isOpen: false,
@@ -214,7 +242,6 @@ class LevelSelect extends Screen {
   calculateMarthaImageSize() {
     const marthaImage = this.game.images["martha-demand-level-select.png"];
     if (!marthaImage) {
-      console.warn("Martha image not found: martha-demand-level-select.png");
       this.marthaImageSize = { width: 0, height: 0 };
       return;
     }
@@ -239,6 +266,89 @@ class LevelSelect extends Screen {
 
   areAllLevelsCompleted() {
     return this.game.completedLevels.every((completed) => completed);
+  }
+
+  updateMainMenuButtonHoverStates(x, y) {
+    // Update all main menu button hover states based on reticle position
+    // This should be called even when panels are open so hover states are ready when panels close
+    const previousHoveredLevel = this.hoveredLevel;
+    this.hoveredLevel = this.getLevelAtPosition(x, y);
+
+    // Play hover sound when hovering over a new level (but only if no panels are open)
+    if (
+      !this.audioPlayer.isOpen &&
+      !this.storyViewer.isOpen &&
+      !this.game.storyManager.showingStory &&
+      !this.creditsOpen &&
+      !this.videoPlayerActive &&
+      this.hoveredLevel !== previousHoveredLevel &&
+      this.hoveredLevel !== -1
+    ) {
+      this.game.audioManager.playSound("button-hover", false, 0.3);
+    }
+
+    // Update button hover states
+    const layout = this.layoutCache;
+
+    this.storyReplayButton.hovered = this.isPointInRect(x, y, {
+      x: layout.storyReplayButtonX - layout.storyReplayButtonWidth / 2,
+      y: layout.storyReplayButtonY - layout.storyReplayButtonHeight / 2,
+      width: layout.storyReplayButtonWidth,
+      height: layout.storyReplayButtonHeight,
+    });
+
+    this.storyViewer.button.hovered = this.isPointInRect(x, y, {
+      x: layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2,
+      y: layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2,
+      width: layout.storyViewerButtonWidth,
+      height: layout.storyViewerButtonHeight,
+    });
+
+    this.creditsButton.hovered = this.isPointInRect(x, y, {
+      x: layout.creditsButtonX - layout.creditsButtonWidth / 2,
+      y: layout.creditsButtonY - layout.creditsButtonHeight / 2,
+      width: layout.creditsButtonWidth,
+      height: layout.creditsButtonHeight,
+    });
+
+    this.audioPlayerButton.hovered = false;
+    if (
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0
+    ) {
+      this.audioPlayerButton.hovered = this.isPointInRect(x, y, {
+        x: layout.audioPlayerButtonX - layout.audioPlayerButtonWidth / 2,
+        y: layout.audioPlayerButtonY - layout.audioPlayerButtonHeight / 2,
+        width: layout.audioPlayerButtonWidth,
+        height: layout.audioPlayerButtonHeight,
+      });
+    }
+
+    this.achievementsDrawer.button.hovered = this.isPointInRect(x, y, {
+      x: layout.achievementsButtonX - layout.achievementsButtonWidth / 2,
+      y: layout.achievementsButtonY - layout.achievementsButtonHeight / 2,
+      width: layout.achievementsButtonWidth,
+      height: layout.achievementsButtonHeight,
+    });
+
+    // Video button hover (only if all levels completed)
+    if (this.areAllLevelsCompleted()) {
+      this.videoButton.hovered = this.isPointInRect(x, y, {
+        x: layout.videoButtonX - layout.videoButtonWidth / 2,
+        y: layout.videoButtonY - layout.videoButtonHeight / 2,
+        width: layout.videoButtonWidth,
+        height: layout.videoButtonHeight,
+      });
+    } else {
+      this.videoButton.hovered = false;
+    }
+
+    // Difficulty selector hover (only if New Game+ is unlocked)
+    if (this.game.highestUnlockedDifficulty > 0) {
+      this.difficultySelector.updateButtonHover(x, y);
+      this.difficultySelector.updateDropdownHover(x, y);
+    }
   }
 
   createLayoutCache() {
@@ -353,6 +463,12 @@ class LevelSelect extends Screen {
       videoButtonWidth: this.game.getScaledValue(400),
       videoButtonHeight: this.game.getScaledValue(100),
 
+      // Audio player button - in top bar between difficulty and trophies
+      audioPlayerButtonX: canvasWidth - this.game.getScaledValue(535),
+      audioPlayerButtonY: barY + barHeight / 2,
+      audioPlayerButtonWidth: this.game.getScaledValue(100),
+      audioPlayerButtonHeight: this.game.getScaledValue(35),
+
       statsPanelWidth: this.game.getScaledValue(200),
       statsPanelHeight: this.game.getScaledValue(40),
     };
@@ -372,9 +488,6 @@ class LevelSelect extends Screen {
       top: -500,
       bottom: canvasHeight + 500,
     };
-
-    console.log("Canvas dimensions:", canvasWidth, "x", canvasHeight);
-    console.log("Garbage collection bounds:", this.menuPhysics.bounds);
 
     this.setupEasterDropZones();
   }
@@ -419,7 +532,37 @@ class LevelSelect extends Screen {
 
   setup() {
     super.setup();
-    this.game.audioManager.playMusic("menu-music", true);
+
+    // Select menu music based on new game plus level (selected difficulty)
+    let menuMusicName = "menu-music"; // Default for NG+0
+    const selectedDifficulty = this.game.selectedDifficulty;
+
+    if (selectedDifficulty === 1) {
+      menuMusicName = "menu-music-1";
+    } else if (selectedDifficulty === 2) {
+      menuMusicName = "menu-music-2";
+    } else if (selectedDifficulty === 3) {
+      menuMusicName = "menu-music-3";
+    } else if (selectedDifficulty >= 4) {
+      // For NG+4 and beyond, randomly select from all menu music
+      const randomChoice = Math.floor(Math.random() * 4);
+      if (randomChoice === 0) {
+        menuMusicName = "menu-music";
+      } else if (randomChoice === 1) {
+        menuMusicName = "menu-music-1";
+      } else if (randomChoice === 2) {
+        menuMusicName = "menu-music-2";
+      } else {
+        menuMusicName = "menu-music-3";
+      }
+    }
+
+    this.game.audioManager.playMusic(menuMusicName, true);
+
+    // Unlock the menu music track in audio player
+    if (this.audioPlayer) {
+      this.audioPlayer.unlockTrack(menuMusicName);
+    }
 
     if (this.game.newStoryPanelUnlocked >= 0) {
       this.game.newStoryPanelUnlocked = -1;
@@ -480,6 +623,11 @@ class LevelSelect extends Screen {
 
     this.closeVideoPlayer();
 
+    // Close audio player if open
+    if (this.audioPlayer.isOpen) {
+      this.audioPlayer.close();
+    }
+
     this.removeCreditsEventListeners();
 
     if (this.creditsOpen) {
@@ -528,8 +676,8 @@ class LevelSelect extends Screen {
                 <h3>Team</h3>
                 <div class="team-credits">
                   <div class="credit-role">
-                    <span class="role">Founder / Game Lead</span>
-                    <span class="name">Ken Whaeadon</span>
+                    <span class="role">Founder / Game Lead / Jack of all Trades</span>
+                    <span class="name">Ken Wheadon</span>
                   </div>
                   <div class="credit-role">
                     <span class="role">Logo</span>
@@ -537,7 +685,7 @@ class LevelSelect extends Screen {
                   </div>
                   <div class="credit-role">
                     <span class="role">Quality Assurance</span>
-                    <span class="name">ravex & Games for Love volunteers</span>
+                    <span class="name">ravex,  Games for Love volunteers, Ken Wheadon</span>
                   </div>
                   <div class="credit-role">
                     <span class="role">Audio Effects - freesound.org</span>
@@ -546,6 +694,10 @@ class LevelSelect extends Screen {
                   <div class="credit-role">
                     <span class="role">Audio Effects - pixabay.com</span>
                     <span class="name">Karim-Nessim, Universfield, freesound_community</span>
+                  </div>
+                  <div class="credit-role">
+                    <span class="role">Martha Voice Actor</span>
+                    <span class="name">Ken Wheadon</span>
                   </div>
                   <div class="credit-role">
                     <span class="role">Lead Artist</span>
@@ -661,7 +813,6 @@ class LevelSelect extends Screen {
   showCredits() {
     if (this.creditsOpen) return;
 
-    console.log("👥 Opening credits");
     this.game.audioManager.playSound("button-click", false, 0.5);
 
     if (this.creditsModal) {
@@ -678,7 +829,6 @@ class LevelSelect extends Screen {
   hideCredits() {
     if (!this.creditsOpen) return;
 
-    console.log("❌ Closing credits");
     this.game.audioManager.playSound("button-click", false, 0.5);
 
     if (this.creditsModal) {
@@ -687,11 +837,31 @@ class LevelSelect extends Screen {
     }
   }
 
+  /**
+   * Smoothly interpolates a value toward a target value
+   * @param {number} current - Current value
+   * @param {number} target - Target value
+   * @param {number} speed - Animation speed multiplier
+   * @param {number} deltaTime - Time elapsed since last frame
+   * @returns {number} Interpolated value
+   */
+  smoothToward(current, target, speed, deltaTime) {
+    if (current < target) {
+      return Math.min(current + speed * deltaTime, target);
+    } else if (current > target) {
+      return Math.max(current - speed * deltaTime, target);
+    }
+    return current;
+  }
+
   onUpdate(deltaTime) {
     if (this.game.storyManager.showingStory) {
       this.game.storyManager.update(deltaTime);
       return;
     }
+
+    // Update audio player animation
+    this.audioPlayer.update(deltaTime);
 
     // Only update difficulty UI if New Game+ is unlocked
     if (this.game.highestUnlockedDifficulty > 0) {
@@ -713,22 +883,16 @@ class LevelSelect extends Screen {
     for (let i = 0; i < this.levelHoverAnimations.length; i++) {
       const isHovered = this.hoveredLevel === i;
       const targetValue = isHovered ? 1 : 0;
-      const animSpeed = 0.008;
 
-      if (this.levelHoverAnimations[i] < targetValue) {
-        this.levelHoverAnimations[i] = Math.min(
-          this.levelHoverAnimations[i] + animSpeed * deltaTime,
-          targetValue
-        );
-      } else if (this.levelHoverAnimations[i] > targetValue) {
-        this.levelHoverAnimations[i] = Math.max(
-          this.levelHoverAnimations[i] - animSpeed * deltaTime,
-          targetValue
-        );
-      }
+      this.levelHoverAnimations[i] = this.smoothToward(
+        this.levelHoverAnimations[i],
+        targetValue,
+        this.ANIMATION_SPEED,
+        deltaTime
+      );
 
       if (this.game.unlockedLevels[i]) {
-        this.levelPulseTimers[i] += deltaTime * 0.002;
+        this.levelPulseTimers[i] += deltaTime * this.PULSE_UPDATE_SPEED;
       }
     }
 
@@ -737,17 +901,18 @@ class LevelSelect extends Screen {
     // Update logo press animation
     if (this.logoPressed) {
       this.logoPressTimer += deltaTime;
-      const pressDuration = 150; // Duration in milliseconds for the press effect
 
-      if (this.logoPressTimer < pressDuration) {
-        // Animate to 95% scale
+      if (this.logoPressTimer < this.PRESS_DURATION) {
+        // Animate to minimum scale
         this.logoPressScale =
-          1.0 - (this.logoPressTimer / pressDuration) * 0.05;
-      } else if (this.logoPressTimer < pressDuration * 2) {
-        // Animate back to 100% scale
+          1.0 -
+          (this.logoPressTimer / this.PRESS_DURATION) * this.PRESS_SCALE_RANGE;
+      } else if (this.logoPressTimer < this.PRESS_DURATION * 2) {
+        // Animate back to maximum scale
         const returnProgress =
-          (this.logoPressTimer - pressDuration) / pressDuration;
-        this.logoPressScale = 0.95 + returnProgress * 0.05;
+          (this.logoPressTimer - this.PRESS_DURATION) / this.PRESS_DURATION;
+        this.logoPressScale =
+          this.PRESS_MIN_SCALE + returnProgress * this.PRESS_SCALE_RANGE;
       } else {
         // Animation complete
         this.logoPressed = false;
@@ -759,33 +924,21 @@ class LevelSelect extends Screen {
       this.storyReplayButton.hoverProgress || 0;
     this.creditsButton.hoverProgress = this.creditsButton.hoverProgress || 0;
 
-    const buttonAnimSpeed = 0.008;
-
     const storyTarget = this.storyReplayButton.hovered ? 1 : 0;
-    if (this.storyReplayButton.hoverProgress < storyTarget) {
-      this.storyReplayButton.hoverProgress = Math.min(
-        this.storyReplayButton.hoverProgress + buttonAnimSpeed * deltaTime,
-        storyTarget
-      );
-    } else if (this.storyReplayButton.hoverProgress > storyTarget) {
-      this.storyReplayButton.hoverProgress = Math.max(
-        this.storyReplayButton.hoverProgress - buttonAnimSpeed * deltaTime,
-        storyTarget
-      );
-    }
+    this.storyReplayButton.hoverProgress = this.smoothToward(
+      this.storyReplayButton.hoverProgress,
+      storyTarget,
+      this.ANIMATION_SPEED,
+      deltaTime
+    );
 
     const creditsTarget = this.creditsButton.hovered ? 1 : 0;
-    if (this.creditsButton.hoverProgress < creditsTarget) {
-      this.creditsButton.hoverProgress = Math.min(
-        this.creditsButton.hoverProgress + buttonAnimSpeed * deltaTime,
-        creditsTarget
-      );
-    } else if (this.creditsButton.hoverProgress > creditsTarget) {
-      this.creditsButton.hoverProgress = Math.max(
-        this.creditsButton.hoverProgress - buttonAnimSpeed * deltaTime,
-        creditsTarget
-      );
-    }
+    this.creditsButton.hoverProgress = this.smoothToward(
+      this.creditsButton.hoverProgress,
+      creditsTarget,
+      this.ANIMATION_SPEED,
+      deltaTime
+    );
 
     if (this.easterEggActive) {
       this.updateMenuSocks(deltaTime);
@@ -855,19 +1008,13 @@ class LevelSelect extends Screen {
       return animation.progress < 1;
     });
 
-    const drawerAnimSpeed = 0.008;
     const drawerTarget = this.achievementsDrawer.isOpen ? 1 : 0;
-    if (this.achievementsDrawer.animationProgress < drawerTarget) {
-      this.achievementsDrawer.animationProgress = Math.min(
-        this.achievementsDrawer.animationProgress + drawerAnimSpeed * deltaTime,
-        drawerTarget
-      );
-    } else if (this.achievementsDrawer.animationProgress > drawerTarget) {
-      this.achievementsDrawer.animationProgress = Math.max(
-        this.achievementsDrawer.animationProgress - drawerAnimSpeed * deltaTime,
-        drawerTarget
-      );
-    }
+    this.achievementsDrawer.animationProgress = this.smoothToward(
+      this.achievementsDrawer.animationProgress,
+      drawerTarget,
+      this.ANIMATION_SPEED,
+      deltaTime
+    );
 
     this.updateMismatchParticles(deltaTime);
   }
@@ -875,13 +1022,19 @@ class LevelSelect extends Screen {
   updateMismatchParticles(deltaTime) {
     if (!this.mismatchParticles) return;
 
-    const timeMultiplier = deltaTime / 16.67;
+    const timeMultiplier = deltaTime / this.TIME_MULTIPLIER_BASE;
 
     this.mismatchParticles.forEach((particle, index) => {
       particle.x += particle.vx * timeMultiplier;
       particle.y += particle.vy * timeMultiplier;
-      particle.vx *= Math.pow(0.98, timeMultiplier);
-      particle.vy *= Math.pow(0.98, timeMultiplier);
+      particle.vx *= Math.pow(
+        this.menuPhysics.rotationFriction,
+        timeMultiplier
+      );
+      particle.vy *= Math.pow(
+        this.menuPhysics.rotationFriction,
+        timeMultiplier
+      );
       particle.life -= timeMultiplier;
 
       if (particle.life <= 0) {
@@ -891,7 +1044,7 @@ class LevelSelect extends Screen {
   }
 
   updateMenuSocks(deltaTime) {
-    const timeMultiplier = deltaTime / 16.67;
+    const timeMultiplier = deltaTime / this.TIME_MULTIPLIER_BASE;
 
     this.menuSocks = this.menuSocks.filter((sock) => {
       if (sock === this.dragSock || this.isSockInDropZone(sock)) return true;
@@ -926,7 +1079,10 @@ class LevelSelect extends Screen {
       ) {
         sock.vx = 0;
         sock.vy = 0;
-        if (sock.rotationSpeed && Math.abs(sock.rotationSpeed) < 0.01) {
+        if (
+          sock.rotationSpeed &&
+          Math.abs(sock.rotationSpeed) < this.ROTATION_VELOCITY_THRESHOLD
+        ) {
           sock.rotationSpeed = 0;
         }
       }
@@ -954,17 +1110,6 @@ class LevelSelect extends Screen {
       sock.y < this.menuPhysics.bounds.top ||
       sock.y > this.menuPhysics.bounds.bottom;
 
-    if (isOutside) {
-      console.log("Sock being garbage collected:", {
-        sockPosition: { x: sock.x, y: sock.y },
-        bounds: this.menuPhysics.bounds,
-        canvasSize: {
-          width: this.game.getCanvasWidth(),
-          height: this.game.getCanvasHeight(),
-        },
-      });
-    }
-
     return isOutside;
   }
 
@@ -978,6 +1123,9 @@ class LevelSelect extends Screen {
       this.game.storyManager.handleMouseMove(x, y);
       return;
     }
+
+    // Update audio player hover
+    this.audioPlayer.updateHover(x, y, this.game.canvas);
 
     if (this.storyViewer.isOpen) {
       this.storyViewer.handleMouseMove(x, y);
@@ -1041,6 +1189,26 @@ class LevelSelect extends Screen {
       this.videoButton.hovered = false;
     }
 
+    // Audio player button hover (always check if at least one track is unlocked)
+    if (
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0
+    ) {
+      const audioPlayerButtonX =
+        layout.audioPlayerButtonX - layout.audioPlayerButtonWidth / 2;
+      const audioPlayerButtonY =
+        layout.audioPlayerButtonY - layout.audioPlayerButtonHeight / 2;
+      this.audioPlayerButton.hovered = this.isPointInRect(x, y, {
+        x: audioPlayerButtonX,
+        y: audioPlayerButtonY,
+        width: layout.audioPlayerButtonWidth,
+        height: layout.audioPlayerButtonHeight,
+      });
+    } else {
+      this.audioPlayerButton.hovered = false;
+    }
+
     this.storyViewer.updateButtonHover(x, y, layout);
 
     // Only update difficulty selector hover if New Game+ is unlocked
@@ -1090,8 +1258,8 @@ class LevelSelect extends Screen {
       }
 
       const closeButtonSize = this.game.getScaledValue(40);
-      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
-      const closeButtonY = this.game.getScaledValue(20);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30); // Moved left by 10px
+      const closeButtonY = this.game.getScaledValue(30); // Moved down by 10px
 
       const dx = x - closeButtonX;
       const dy = y - closeButtonY;
@@ -1137,6 +1305,13 @@ class LevelSelect extends Screen {
       this.dragSock.y = y - this.dragOffset.y;
     }
 
+    // Update hovered menu sock (only when not dragging)
+    if (!this.isDragging && this.easterEggActive) {
+      this.hoveredMenuSock = this.getSockAtPosition(x, y);
+    } else if (this.isDragging) {
+      this.hoveredMenuSock = null;
+    }
+
     this.updateDropZoneHover(x, y);
 
     // Update cursor based on what's being hovered
@@ -1167,11 +1342,13 @@ class LevelSelect extends Screen {
       this.storyReplayButton.hovered ||
       this.creditsButton.hovered ||
       this.videoButton.hovered ||
+      this.audioPlayerButton.hovered ||
       this.achievementsDrawer.button.hovered ||
       this.achievementsDrawer.closeButton.hovered ||
       this.storyViewer.button.hovered ||
       (this.game.highestUnlockedDifficulty > 0 &&
-        this.difficultySelector.isButtonHovered());
+        this.difficultySelector.isButtonHovered()) ||
+      this.audioPlayer.isAnyElementHovered();
 
     // Check if hovering over a level button
     const isLevelHovered = this.hoveredLevel !== -1;
@@ -1223,8 +1400,8 @@ class LevelSelect extends Screen {
       const progress = this.achievementsDrawer.animationProgress;
       const drawerX = -drawerWidth + drawerWidth * progress;
       const closeButtonSize = this.game.getScaledValue(40);
-      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
-      const closeButtonY = this.game.getScaledValue(20);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30); // Moved left by 10px
+      const closeButtonY = this.game.getScaledValue(30); // Moved down by 10px
 
       const dx = x - closeButtonX;
       const dy = y - closeButtonY;
@@ -1362,7 +1539,8 @@ class LevelSelect extends Screen {
 
     // If story is showing, let it handle keyboard
     if (this.game.storyManager.showingStory) {
-      return; // Story manager will handle its own keys
+      this.game.storyManager.handleKeyDown(e);
+      return;
     }
 
     // If credits modal is open, close with Escape
@@ -1501,7 +1679,10 @@ class LevelSelect extends Screen {
 
         // Track money spent for Big Spender achievement
         this.game.totalMoneySpent += levelCost;
-        if (this.game.totalMoneySpent >= 1000) {
+        if (
+          this.game.totalMoneySpent >=
+          GameConfig.ACHIEVEMENTS.BIG_SPENDER.threshold
+        ) {
           this.game.unlockAchievement("big_spender");
         }
 
@@ -1615,6 +1796,12 @@ class LevelSelect extends Screen {
       return;
     }
 
+    // Audio player click handling
+    if (this.audioPlayer.isOpen) {
+      this.audioPlayer.handleClick(x, y, this.game.canvas);
+      return;
+    }
+
     if (this.game.storyManager.showingStory) {
       this.game.storyManager.handleClick(x, y);
       return;
@@ -1630,8 +1817,8 @@ class LevelSelect extends Screen {
       const progress = this.achievementsDrawer.animationProgress;
       const drawerX = -drawerWidth + drawerWidth * progress;
       const closeButtonSize = this.game.getScaledValue(40);
-      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
-      const closeButtonY = this.game.getScaledValue(20);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30); // Moved left by 10px
+      const closeButtonY = this.game.getScaledValue(30); // Moved down by 10px
 
       const dx = x - closeButtonX;
       const dy = y - closeButtonY;
@@ -1750,6 +1937,23 @@ class LevelSelect extends Screen {
       return true;
     }
 
+    // Check audio player button (if at least one track is unlocked)
+    if (
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0 &&
+      this.isPointInRect(x, y, {
+        x: layout.audioPlayerButtonX - layout.audioPlayerButtonWidth / 2,
+        y: layout.audioPlayerButtonY - layout.audioPlayerButtonHeight / 2,
+        width: layout.audioPlayerButtonWidth,
+        height: layout.audioPlayerButtonHeight,
+      })
+    ) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.audioPlayer.open();
+      return true;
+    }
+
     if (this.isCreditsButtonClicked(x, y)) {
       this.showCredits();
       return true;
@@ -1762,6 +1966,464 @@ class LevelSelect extends Screen {
       return true;
     }
 
+    const levelIndex = this.getLevelAtPosition(x, y);
+    if (levelIndex !== -1) {
+      this.selectLevel(levelIndex);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Controller reticle support
+  getInteractiveElements() {
+    const layout = this.layoutCache;
+    const elements = [];
+
+    // If story viewer is open, return its buttons
+    if (this.storyViewer.isOpen) {
+      const canvasWidth = this.game.getCanvasWidth();
+      const canvasHeight = this.game.getCanvasHeight();
+      const modalWidth = this.game.getScaledValue(900);
+      const modalHeight = this.game.getScaledValue(480);
+      const modalX = (canvasWidth - modalWidth) / 2;
+      const modalY = (canvasHeight - modalHeight) / 2;
+      const buttonY = modalY + modalHeight - this.game.getScaledValue(50);
+      const buttonWidth = this.game.getScaledValue(85);
+      const buttonHeight = this.game.getScaledValue(35);
+      const buttonSpacing = this.game.getScaledValue(15);
+      const unlockedPanels = this.storyViewer.getUnlockedPanels();
+
+      // Close button (far left)
+      elements.push({
+        x: modalX + this.game.getScaledValue(30),
+        y: buttonY,
+        width: buttonWidth,
+        height: buttonHeight,
+      });
+
+      // Previous button (if available)
+      if (this.storyViewer.currentPanel > 0) {
+        const prevX =
+          modalX +
+          modalWidth -
+          buttonWidth * 2 -
+          buttonSpacing -
+          this.game.getScaledValue(30);
+        elements.push({
+          x: prevX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight,
+        });
+      }
+
+      // Next button (if available)
+      if (this.storyViewer.currentPanel < unlockedPanels.length - 1) {
+        const nextX =
+          modalX + modalWidth - buttonWidth - this.game.getScaledValue(30);
+        elements.push({
+          x: nextX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight,
+        });
+      }
+
+      return elements;
+    }
+
+    // Add story replay button (How to Play)
+    elements.push({
+      x: layout.storyReplayButtonX - layout.storyReplayButtonWidth / 2,
+      y: layout.storyReplayButtonY - layout.storyReplayButtonHeight / 2,
+      width: layout.storyReplayButtonWidth,
+      height: layout.storyReplayButtonHeight,
+    });
+
+    // Add story viewer button (Story)
+    elements.push({
+      x: layout.storyViewerButtonX - layout.storyViewerButtonWidth / 2,
+      y: layout.storyViewerButtonY - layout.storyViewerButtonHeight / 2,
+      width: layout.storyViewerButtonWidth,
+      height: layout.storyViewerButtonHeight,
+    });
+
+    // Add credits button
+    elements.push({
+      x: layout.creditsButtonX - layout.creditsButtonWidth / 2,
+      y: layout.creditsButtonY - layout.creditsButtonHeight / 2,
+      width: layout.creditsButtonWidth,
+      height: layout.creditsButtonHeight,
+    });
+
+    // Add audio player button (if unlocked)
+    if (
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0
+    ) {
+      elements.push({
+        x: layout.audioPlayerButtonX - layout.audioPlayerButtonWidth / 2,
+        y: layout.audioPlayerButtonY - layout.audioPlayerButtonHeight / 2,
+        width: layout.audioPlayerButtonWidth,
+        height: layout.audioPlayerButtonHeight,
+      });
+    }
+
+    // Add achievements button (Trophies)
+    elements.push({
+      x: layout.achievementsButtonX - layout.achievementsButtonWidth / 2,
+      y: layout.achievementsButtonY - layout.achievementsButtonHeight / 2,
+      width: layout.achievementsButtonWidth,
+      height: layout.achievementsButtonHeight,
+    });
+
+    // Add secret bonus video button (if all levels completed)
+    if (this.areAllLevelsCompleted()) {
+      elements.push({
+        x: layout.videoButtonX - layout.videoButtonWidth / 2,
+        y: layout.videoButtonY - layout.videoButtonHeight / 2,
+        width: layout.videoButtonWidth,
+        height: layout.videoButtonHeight,
+      });
+    }
+
+    // Add difficulty selector button (if New Game+ is unlocked)
+    if (this.game.highestUnlockedDifficulty > 0) {
+      elements.push({
+        x: this.difficultySelector.button.x,
+        y: this.difficultySelector.button.y,
+        width: this.difficultySelector.button.width,
+        height: this.difficultySelector.button.height,
+      });
+
+      // Add dropdown options if open
+      if (this.difficultySelector.isOpen) {
+        for (
+          let i = 0;
+          i < this.difficultySelector.dropdown.options.length;
+          i++
+        ) {
+          const optionY =
+            this.difficultySelector.dropdown.y +
+            i * this.difficultySelector.dropdown.optionHeight;
+          elements.push({
+            x: this.difficultySelector.dropdown.x,
+            y: optionY,
+            width: this.difficultySelector.dropdown.width,
+            height: this.difficultySelector.dropdown.optionHeight,
+          });
+        }
+      }
+    }
+
+    // Add level tiles
+    const levelTileSize = this.game.getScaledValue(
+      this.levelConfig.baseButtonSize
+    );
+    for (let i = 0; i < GameConfig.LEVELS.length; i++) {
+      const col = i % this.levelConfig.columns;
+      const row = Math.floor(i / this.levelConfig.columns);
+      const levelX =
+        layout.levelGridStartX + col * layout.levelHorizontalSpacing;
+      const levelY = layout.levelGridStartY + row * layout.levelVerticalSpacing;
+      elements.push({
+        x: levelX - levelTileSize / 2,
+        y: levelY - levelTileSize / 2,
+        width: levelTileSize,
+        height: levelTileSize,
+      });
+    }
+
+    return elements;
+  }
+
+  handleReticleMove(x, y) {
+    // If video player is active, don't update hover states for background elements
+    if (this.videoPlayerActive) {
+      // Still update main menu hover states so they're ready when video player closes
+      this.updateMainMenuButtonHoverStates(x, y);
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(false);
+      }
+      return;
+    }
+
+    // If audio player is open, delegate to it AND update main menu hover states
+    if (this.audioPlayer.isOpen) {
+      // Update main menu hover states so they're ready when audio player closes
+      this.updateMainMenuButtonHoverStates(x, y);
+      this.audioPlayer.handleReticleMove(x, y);
+      return;
+    }
+
+    // If story manager is showing, delegate to it AND update main menu hover states
+    if (this.game.storyManager.showingStory) {
+      console.log("Story manager showing - reticle at", x, y);
+      // Update main menu hover states so they're ready when story manager closes
+      this.updateMainMenuButtonHoverStates(x, y);
+      this.game.storyManager.handleMouseMove(x, y);
+      // Story manager has its own hover state handling
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(false); // Will be updated by story manager
+      }
+      return;
+    }
+
+    // If credits popup is open, check for close button hover AND update main menu hover states
+    if (this.creditsOpen) {
+      // Update main menu hover states so they're ready when credits closes
+      this.updateMainMenuButtonHoverStates(x, y);
+      const closeButton = document.getElementById("closeCredits");
+      if (closeButton) {
+        // Convert canvas coordinates to screen coordinates
+        const canvasRect = this.game.canvas.getBoundingClientRect();
+        const screenX = x + canvasRect.left;
+        const screenY = y + canvasRect.top;
+
+        const buttonRect = closeButton.getBoundingClientRect();
+        const isHovering =
+          screenX >= buttonRect.left &&
+          screenX <= buttonRect.right &&
+          screenY >= buttonRect.top &&
+          screenY <= buttonRect.bottom;
+
+        if (this.game.controllerManager) {
+          this.game.controllerManager.setReticleHoverState(isHovering);
+        }
+      }
+      return;
+    }
+
+    // If story viewer is open, delegate to it AND update main menu hover states
+    if (this.storyViewer.isOpen) {
+      console.log("Story viewer open - reticle at", x, y);
+      // Update main menu hover states so they're ready when story viewer closes
+      this.updateMainMenuButtonHoverStates(x, y);
+      this.storyViewer.handleMouseMove(x, y);
+
+      // Update reticle hover state based on story viewer buttons
+      const isHovering =
+        this.storyViewer.navButtons.close.hovered ||
+        this.storyViewer.navButtons.previous.hovered ||
+        this.storyViewer.navButtons.next.hovered;
+
+      console.log("Story viewer buttons hovered:", this.storyViewer.navButtons);
+
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(isHovering);
+      }
+      return;
+    }
+
+    // Update main menu button hover states (no panels open)
+    this.updateMainMenuButtonHoverStates(x, y);
+
+    // Handle achievements drawer hover detection
+    const layout = this.layoutCache;
+    if (
+      this.achievementsDrawer.isOpen &&
+      this.achievementsDrawer.animationProgress > 0.5
+    ) {
+      const drawerWidth = layout.achievementsDrawerWidth;
+      const drawerX =
+        -drawerWidth + drawerWidth * this.achievementsDrawer.animationProgress;
+      const closeButtonSize = this.game.getScaledValue(40);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30);
+      const closeButtonY = this.game.getScaledValue(30);
+
+      const dx = x - closeButtonX;
+      const dy = y - closeButtonY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      this.achievementsDrawer.closeButton.hovered =
+        distance <= closeButtonSize / 2;
+
+      // Update reticle hover state for close button
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(
+          this.achievementsDrawer.closeButton.hovered
+        );
+      }
+    } else {
+      this.achievementsDrawer.closeButton.hovered = false;
+
+      // Update reticle hover state in controller manager
+      const isHovering =
+        this.hoveredLevel !== -1 ||
+        this.storyReplayButton.hovered ||
+        this.storyViewer.button.hovered ||
+        this.creditsButton.hovered ||
+        this.audioPlayerButton.hovered ||
+        this.achievementsDrawer.button.hovered ||
+        this.videoButton.hovered ||
+        (this.game.highestUnlockedDifficulty > 0 &&
+          this.difficultySelector.isButtonHovered());
+
+      if (this.game.controllerManager) {
+        this.game.controllerManager.setReticleHoverState(isHovering);
+      }
+    }
+  }
+
+  handleReticleAction(x, y) {
+    // Handle video player modal clicks
+    if (this.videoPlayerActive) {
+      const videoWidth = this.game.getScaledValue(640);
+      const videoHeight = this.game.getScaledValue(360);
+      const videoX = (this.game.getCanvasWidth() - videoWidth) / 2;
+      const videoY = (this.game.getCanvasHeight() - videoHeight) / 2;
+      const clickMargin = this.game.getScaledValue(10);
+
+      const clickedOutside =
+        x < videoX - clickMargin ||
+        x > videoX + videoWidth + clickMargin ||
+        y < videoY - clickMargin ||
+        y > videoY + videoHeight + clickMargin;
+
+      if (clickedOutside) {
+        this.closeVideoPlayer();
+      }
+      return true;
+    }
+
+    // If audio player is open, delegate to it
+    if (this.audioPlayer.isOpen) {
+      return this.audioPlayer.handleReticleAction(x, y);
+    }
+
+    // If story manager is showing, delegate to it
+    if (this.game.storyManager.showingStory) {
+      console.log("Story manager showing - reticle action at", x, y);
+      this.game.storyManager.handleClick(x, y);
+      return true;
+    }
+
+    // If achievements drawer is open, check for close button click
+    if (this.achievementsDrawer.isOpen) {
+      const layout = this.layoutCache;
+      const drawerWidth = layout.achievementsDrawerWidth;
+      const progress = this.achievementsDrawer.animationProgress;
+      const drawerX = -drawerWidth + drawerWidth * progress;
+      const closeButtonSize = this.game.getScaledValue(40);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30);
+      const closeButtonY = this.game.getScaledValue(30);
+
+      const dx = x - closeButtonX;
+      const dy = y - closeButtonY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= closeButtonSize / 2) {
+        this.game.audioManager.playSound("button-click", false, 0.5);
+        this.toggleAchievementsDrawer();
+        return true;
+      }
+
+      // Click is on the drawer - consume the click to prevent click-through
+      const canvasHeight = this.game.getCanvasHeight();
+      if (
+        x >= drawerX &&
+        x <= drawerX + drawerWidth &&
+        y >= 0 &&
+        y <= canvasHeight
+      ) {
+        return true;
+      }
+    }
+
+    // If credits popup is open, check for close button click
+    if (this.creditsOpen) {
+      const closeButton = document.getElementById("closeCredits");
+      if (closeButton) {
+        // Convert canvas coordinates to screen coordinates
+        const canvasRect = this.game.canvas.getBoundingClientRect();
+        const screenX = x + canvasRect.left;
+        const screenY = y + canvasRect.top;
+
+        const buttonRect = closeButton.getBoundingClientRect();
+        const isClickingButton =
+          screenX >= buttonRect.left &&
+          screenX <= buttonRect.right &&
+          screenY >= buttonRect.top &&
+          screenY <= buttonRect.bottom;
+
+        if (isClickingButton) {
+          this.game.audioManager.playSound("button-click", false, 0.5);
+          this.hideCredits();
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // If story viewer is open, delegate to it
+    if (this.storyViewer.isOpen) {
+      console.log("Story viewer open - reticle action at", x, y);
+      const result = this.storyViewer.handleClick(x, y);
+      console.log("Story viewer click result:", result);
+      return result;
+    }
+
+    // Reuse the existing click logic
+    // Check story replay button (How to Play)
+    if (this.storyReplayButton.hovered) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.game.storyManager.show();
+      return true;
+    }
+
+    // Check story viewer button (Story)
+    if (this.storyViewer.button.hovered) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.storyViewer.open();
+      return true;
+    }
+
+    // Check credits button
+    if (this.creditsButton.hovered) {
+      this.showCredits();
+      return true;
+    }
+
+    // Check audio player button
+    if (
+      this.audioPlayerButton.hovered &&
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0
+    ) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.audioPlayer.open();
+      return true;
+    }
+
+    // Check achievements button (Trophies)
+    if (this.achievementsDrawer.button.hovered) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.toggleAchievementsDrawer();
+      return true;
+    }
+
+    // Check video button (if all levels completed)
+    if (this.videoButton.hovered && this.areAllLevelsCompleted()) {
+      this.game.audioManager.playSound("button-click", false, 0.5);
+      this.openVideoPlayer();
+      return true;
+    }
+
+    // Check difficulty selector (if New Game+ unlocked)
+    if (
+      this.game.highestUnlockedDifficulty > 0 &&
+      this.difficultySelector.handleClick(x, y)
+    ) {
+      // Clear cache and recalculate layout after difficulty change to update level display
+      this.clearLayoutCache();
+      this.calculateLayout();
+      return true;
+    }
+
+    // Check level selection
     const levelIndex = this.getLevelAtPosition(x, y);
     if (levelIndex !== -1) {
       this.selectLevel(levelIndex);
@@ -1810,9 +2472,6 @@ class LevelSelect extends Screen {
 
     this.clearSockFromDropZones(sock1);
     this.clearSockFromDropZones(sock2);
-
-    console.log("Removed matched socks:", sock1.type, sock2.type);
-    console.log("Remaining socks count:", this.menuSocks.length);
   }
 
   checkForEasterEggMatches() {
@@ -1828,7 +2487,6 @@ class LevelSelect extends Screen {
         sock1.type === undefined ||
         sock2.type === undefined
       ) {
-        console.log("One or both socks are invalid, clearing drop zones");
         this.easterDropZones[0].sock = null;
         this.easterDropZones[1].sock = null;
         return;
@@ -1878,7 +2536,6 @@ class LevelSelect extends Screen {
       sock1.type === undefined ||
       sock2.type === undefined
     ) {
-      console.log("Invalid socks in mismatch handler, aborting");
       return;
     }
 
@@ -1913,7 +2570,6 @@ class LevelSelect extends Screen {
 
   createEasterEggMismatchEffect(sock1, sock2) {
     if (!sock1 || !sock2 || sock1.x === undefined || sock2.x === undefined) {
-      console.log("Invalid socks in mismatch effect, aborting");
       return;
     }
 
@@ -1978,7 +2634,10 @@ class LevelSelect extends Screen {
 
     // Track easter egg sockballs for Sockball Wizard achievement
     this.game.easterEggSockballsCreated++;
-    if (this.game.easterEggSockballsCreated >= 10) {
+    if (
+      this.game.easterEggSockballsCreated >=
+      GameConfig.ACHIEVEMENTS.SOCKBALL_WIZARD.threshold
+    ) {
       this.game.unlockAchievement("sockball_wizard");
     }
 
@@ -2009,6 +2668,12 @@ class LevelSelect extends Screen {
   }
 
   onMouseWheel(deltaY) {
+    // Check audio player first
+    if (this.audioPlayer.isOpen) {
+      this.audioPlayer.handleScroll(deltaY * 0.5);
+      return true;
+    }
+
     if (
       this.achievementsDrawer.isOpen &&
       this.achievementsDrawer.animationProgress > 0.5
@@ -2065,8 +2730,10 @@ class LevelSelect extends Screen {
     this.logoClickCount++;
     this.game.logoClickCount++; // Track in game for achievement persistence
 
-    // Achievement: LOGO_CLICKER (click logo 10 times)
-    if (this.game.logoClickCount >= 10) {
+    // Achievement: LOGO_CLICKER
+    if (
+      this.game.logoClickCount >= GameConfig.ACHIEVEMENTS.LOGO_CLICKER.threshold
+    ) {
       this.game.unlockAchievement("logo_clicker");
     }
 
@@ -2236,6 +2903,11 @@ class LevelSelect extends Screen {
       this.renderVideoButton(ctx);
     }
 
+    // Render easter egg socks BEFORE the top bar so they appear below it
+    if (this.easterEggActive) {
+      this.renderMenuSocks(ctx);
+    }
+
     this.renderTopBar(ctx);
 
     // NEW GAME+: Render difficulty selector (only if New Game+ unlocked)
@@ -2260,10 +2932,6 @@ class LevelSelect extends Screen {
     this.renderPointGainAnimations(ctx);
     this.renderMismatchParticles(ctx);
 
-    if (this.easterEggActive) {
-      this.renderMenuSocks(ctx);
-    }
-
     // Render story viewer modal
     this.storyViewer.renderModal(ctx, this.layoutCache);
 
@@ -2271,6 +2939,9 @@ class LevelSelect extends Screen {
     if (this.videoPlayerActive) {
       this.renderVideoPlayer(ctx);
     }
+
+    // Render audio player if open
+    this.audioPlayer.render(ctx);
 
     if (this.game.storyManager.showingStory) {
       this.game.storyManager.render(ctx);
@@ -2284,9 +2955,9 @@ class LevelSelect extends Screen {
     const canvasWidth = this.game.getCanvasWidth();
     const canvasHeight = this.game.getCanvasHeight();
 
-    if (this.game.images["level-select-bg.png"]) {
+    if (this.game.images["level-select-bg.jpg"]) {
       ctx.drawImage(
-        this.game.images["level-select-bg.png"],
+        this.game.images["level-select-bg.jpg"],
         0,
         0,
         canvasWidth,
@@ -2616,6 +3287,27 @@ class LevelSelect extends Screen {
       false,
       "btn-trophies.png"
     );
+
+    // Audio Player button (always visible if at least one track is unlocked)
+    if (
+      this.audioPlayer &&
+      this.audioPlayer.game.unlockedTracks &&
+      this.audioPlayer.game.unlockedTracks.length > 0
+    ) {
+      this.renderTopBarButton(
+        ctx,
+        layout.audioPlayerButtonX,
+        layout.audioPlayerButtonY,
+        layout.audioPlayerButtonWidth,
+        layout.audioPlayerButtonHeight,
+        "Music",
+        this.audioPlayerButton.hovered,
+        "rgba(138, 43, 226, 0.8)",
+        null,
+        false,
+        "btn-audioplayer.png"
+      );
+    }
 
     this.renderTopBarButton(
       ctx,
@@ -3173,31 +3865,59 @@ class LevelSelect extends Screen {
       );
       ctx.restore();
 
+      // Calculate unlocked/total achievements
+      const allAchievements = Object.values(GameConfig.ACHIEVEMENTS);
+      const unlockedCount = allAchievements.filter(
+        (achievement) =>
+          this.game.achievements &&
+          this.game.achievements[achievement.id]?.unlocked
+      ).length;
+      const totalCount = allAchievements.length;
+
+      // Render achievement counter
+      this.renderText(
+        ctx,
+        `${unlockedCount} / ${totalCount}`,
+        drawerX + drawerWidth / 2,
+        this.game.getScaledValue(55),
+        {
+          fontSize: layout.normalFontSize,
+          align: "center",
+          color: unlockedCount === totalCount ? "#FFD700" : "#B0B0B0",
+          weight: "normal",
+        }
+      );
+
       ctx.strokeStyle = "rgba(255, 215, 0, 0.3)";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(
         drawerX + this.game.getScaledValue(20),
-        this.game.getScaledValue(60)
+        this.game.getScaledValue(75)
       );
       ctx.lineTo(
         drawerX + drawerWidth - this.game.getScaledValue(20),
-        this.game.getScaledValue(60)
+        this.game.getScaledValue(75)
       );
       ctx.stroke();
 
-      // Render close button (styled to match credits popup)
+      // Render close button with red X icon
       const closeButtonSize = this.game.getScaledValue(40);
-      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(20);
-      const closeButtonY = this.game.getScaledValue(20);
+      const closeButtonX = drawerX + drawerWidth - this.game.getScaledValue(30); // Moved left by 10px
+      const closeButtonY = this.game.getScaledValue(30); // Moved down by 10px
 
       ctx.save();
 
-      // Close button background - matching credits style
+      // Apply hover scale effect
+      if (this.achievementsDrawer.closeButton.hovered) {
+        ctx.translate(closeButtonX, closeButtonY);
+        ctx.scale(1.1, 1.1);
+        ctx.translate(-closeButtonX, -closeButtonY);
+      }
+
+      // Close button background
       if (this.achievementsDrawer.closeButton.hovered) {
         ctx.fillStyle = "rgba(212, 175, 55, 0.2)";
-        ctx.shadowColor = "rgba(212, 175, 55, 0.4)";
-        ctx.shadowBlur = this.game.getScaledValue(10);
       } else {
         ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
       }
@@ -3206,7 +3926,7 @@ class LevelSelect extends Screen {
       ctx.arc(closeButtonX, closeButtonY, closeButtonSize / 2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Close button border - matching credits gold theme
+      // Close button border
       if (this.achievementsDrawer.closeButton.hovered) {
         ctx.strokeStyle = "rgba(212, 175, 55, 0.5)";
       } else {
@@ -3217,15 +3937,18 @@ class LevelSelect extends Screen {
       ctx.arc(closeButtonX, closeButtonY, closeButtonSize / 2, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.shadowColor = "transparent";
-      ctx.shadowBlur = 0;
-
-      // X symbol - using × character like credits
-      ctx.fillStyle = "#e0e0e0";
-      ctx.font = `bold ${this.game.getScaledValue(28)}px Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("×", closeButtonX, closeButtonY);
+      // Draw red X icon
+      if (this.game.images["icon-redx.png"]) {
+        const redXIcon = this.game.images["icon-redx.png"];
+        const iconSize = this.game.getScaledValue(24);
+        ctx.drawImage(
+          redXIcon,
+          closeButtonX - iconSize / 2,
+          closeButtonY - iconSize / 2,
+          iconSize,
+          iconSize
+        );
+      }
 
       ctx.restore();
 
@@ -3270,6 +3993,73 @@ class LevelSelect extends Screen {
           drawerWidth - cardMargin * 2 - this.game.getScaledValue(25);
         const cardHeight = this.game.getScaledValue(65);
         const cardRadius = this.game.getScaledValue(8);
+
+        // Calculate progress for achievements with thresholds
+        let progressPercent = 0;
+        if (achievement.threshold && !unlocked) {
+          // Map achievement IDs to their progress values
+          const progressMap = {
+            sock_hoarder: this.game.totalSockMatches,
+            deep_pockets: this.game.playerPoints,
+            big_spender: this.game.totalMoneySpent,
+            marthas_millionaire: this.game.totalSockballsEarned,
+            veteran_tenant: this.game.levelsPlayed,
+            sockball_wizard: this.game.easterEggSockballsCreated,
+            logo_clicker: this.game.logoClickCount,
+            butterfingers:
+              this.game.achievements[achievement.id]?.consecutiveMisses || 0,
+            pinball_king: this.game.totalWallBounceCatches,
+            bonus_master: this.game.totalBonusHits,
+            space_shooter: this.game.totalDoubleBounces,
+            disaster_prone: this.game.totalLevelLosses || 0,
+            grind_master: this.game.totalLevelsPlayed || 0,
+            thats_my_song: this.game.audioPlayer?.getMostPlayedCount() || 0,
+            kinda_perfect: this.game.totalPerfectShots || 0,
+            perfection: this.game.totalPerfectShots || 0,
+            good_enough: this.game.totalGoodShots || 0,
+            flub_king: this.game.totalFlubs || 0,
+            pincer_addict: this.game.totalPincers || 0,
+            miss_miss_miss: this.game.totalMisses || 0,
+            mismatch_queen: this.game.lifetimeMismatches || 0,
+            snap_master: this.game.totalSnapPlacements || 0,
+            video_completionist: this.game.watchedVideos?.length || 0,
+            speed_royalty: this.game.consecutiveWins || 0,
+            baby_speed_run: this.game.consecutiveWins || 0,
+            speed_run: this.game.consecutiveWins || 0,
+            deadeye: this.game.consecutiveHits || 0,
+            streak_king: this.game.achievements[achievement.id]?.maxStreak || 0,
+            combo_master:
+              this.game.achievements[achievement.id]?.maxStreak || 0,
+            sock_sniper:
+              this.game.achievements[achievement.id]?.consecutivePerfects || 0,
+            pinball_wizard:
+              this.game.achievements[achievement.id]?.wallBouncesThisLevel || 0,
+            mismatch_chaos:
+              this.game.achievements[achievement.id]?.mismatchesThisLevel || 0,
+            double_snap:
+              this.game.achievements[achievement.id]?.snapsThisGame || 0,
+            one_at_a_time:
+              this.game.achievements[achievement.id]?.sameTypeStreak || 0,
+            momentum_killer:
+              this.game.achievements[achievement.id]?.streakBeforeBreak || 0,
+            no_hope:
+              this.game.achievements[achievement.id]?.missesThisGame || 0,
+            sock_master:
+              this.game.completedLevelsByDifficulty[0]?.filter((c) => c)
+                .length || 0,
+            halfway_there:
+              this.game.completedLevelsByDifficulty[0]
+                ?.slice(0, 5)
+                .filter((c) => c).length || 0,
+            lore_master: this.game.storyPanelsRead?.length || 0,
+          };
+
+          const currentProgress = progressMap[achievement.id] || 0;
+          progressPercent = Math.min(
+            currentProgress / achievement.threshold,
+            1
+          );
+        }
 
         const cardGradient = ctx.createLinearGradient(
           cardX,
@@ -3323,6 +4113,77 @@ class LevelSelect extends Screen {
         ctx.quadraticCurveTo(cardX, cardY, cardX + cardRadius, cardY);
         ctx.closePath();
         ctx.fill();
+
+        // Draw progress fill for achievements with thresholds (only if not unlocked)
+        if (achievement.threshold && !unlocked && progressPercent >= 0) {
+          const progressWidth = cardWidth * progressPercent;
+
+          ctx.save();
+          // Clip to card shape
+          ctx.beginPath();
+          ctx.moveTo(cardX + cardRadius, cardY);
+          ctx.lineTo(cardX + cardWidth - cardRadius, cardY);
+          ctx.quadraticCurveTo(
+            cardX + cardWidth,
+            cardY,
+            cardX + cardWidth,
+            cardY + cardRadius
+          );
+          ctx.lineTo(cardX + cardWidth, cardY + cardHeight - cardRadius);
+          ctx.quadraticCurveTo(
+            cardX + cardWidth,
+            cardY + cardHeight,
+            cardX + cardWidth - cardRadius,
+            cardY + cardHeight
+          );
+          ctx.lineTo(cardX + cardRadius, cardY + cardHeight);
+          ctx.quadraticCurveTo(
+            cardX,
+            cardY + cardHeight,
+            cardX,
+            cardY + cardHeight - cardRadius
+          );
+          ctx.lineTo(cardX, cardY + cardRadius);
+          ctx.quadraticCurveTo(cardX, cardY, cardX + cardRadius, cardY);
+          ctx.closePath();
+          ctx.clip();
+
+          // Draw progress fill
+          const progressGradient = ctx.createLinearGradient(
+            cardX,
+            cardY,
+            cardX,
+            cardY + cardHeight
+          );
+          progressGradient.addColorStop(0, "rgba(100, 180, 255, 0.1)");
+          progressGradient.addColorStop(1, "rgba(60, 120, 200, 0.05)");
+
+          ctx.fillStyle = progressGradient;
+          ctx.fillRect(cardX, cardY, progressWidth, cardHeight);
+
+          // Add a subtle glow at the edge of progress
+          if (progressPercent < 1) {
+            const edgeGradient = ctx.createLinearGradient(
+              cardX + progressWidth - this.game.getScaledValue(15),
+              cardY,
+              cardX + progressWidth + this.game.getScaledValue(5),
+              cardY
+            );
+            edgeGradient.addColorStop(0, "rgba(100, 180, 255, 0)");
+            edgeGradient.addColorStop(0.5, "rgba(100, 180, 255, 0.4)");
+            edgeGradient.addColorStop(1, "rgba(100, 180, 255, 0)");
+
+            ctx.fillStyle = edgeGradient;
+            ctx.fillRect(
+              cardX + progressWidth - this.game.getScaledValue(15),
+              cardY,
+              this.game.getScaledValue(20),
+              cardHeight
+            );
+          }
+
+          ctx.restore();
+        }
 
         if (unlocked) {
           ctx.strokeStyle = isHovered
@@ -3424,7 +4285,7 @@ class LevelSelect extends Screen {
         ctx.fillText(displayDesc, textX, descY);
 
         const statusX = cardX + cardWidth - this.game.getScaledValue(15);
-        const statusY = cardY + cardHeight - this.game.getScaledValue(15);
+        const statusY = cardY + cardHeight - this.game.getScaledValue(22);
 
         if (unlocked) {
           this.renderText(ctx, "✓", statusX, statusY, {
@@ -4043,9 +4904,15 @@ class LevelSelect extends Screen {
   renderLevelButtons(ctx) {
     const layout = this.layoutCache;
 
+    // Generate title based on current difficulty
+    let titleText = "Select Level";
+    if (this.game.selectedDifficulty > 0) {
+      titleText = `Select New Game +${this.game.selectedDifficulty} Level`;
+    }
+
     this.renderText(
       ctx,
-      "Select Level",
+      titleText,
       layout.centerX,
       layout.levelGridStartY - this.game.getScaledValue(100),
       {
@@ -4426,6 +5293,10 @@ class LevelSelect extends Screen {
     this.menuSocks.forEach((sock) => {
       ctx.save();
 
+      // Check if this sock is being hovered or dragged
+      const isHovered = sock === this.hoveredMenuSock;
+      const isDragged = sock === this.dragSock;
+
       if (sock.glowEffect > 0) {
         ctx.shadowColor = "#FFD700";
         ctx.shadowBlur = sock.glowEffect;
@@ -4435,8 +5306,25 @@ class LevelSelect extends Screen {
         ctx.shadowBlur = this.game.getScaledValue(5);
       }
 
+      // Add hover effect - blue/cyan glow
+      if (isHovered && !isDragged) {
+        ctx.shadowColor = "rgba(100, 180, 255, 0.9)";
+        ctx.shadowBlur = this.game.getScaledValue(25);
+      }
+
+      // Add dragged effect - stronger yellow glow
+      if (isDragged) {
+        ctx.shadowColor = "rgba(255, 215, 0, 1.0)";
+        ctx.shadowBlur = this.game.getScaledValue(30);
+      }
+
       ctx.translate(sock.x, sock.y);
       ctx.rotate(sock.rotation);
+
+      // Slightly scale up dragged sock
+      if (isDragged) {
+        ctx.scale(1.1, 1.1);
+      }
 
       const sockImageName = `sock${sock.type}.png`;
       if (this.game.images[sockImageName]) {
@@ -4877,6 +5765,137 @@ class LevelSelect extends Screen {
     ctx.restore();
   }
 
+  renderAudioPlayerButton(ctx) {
+    const layout = this.layoutCache;
+    const button = this.audioPlayerButton;
+    const buttonImage = this.game.images["btn-audioplayer.png"];
+
+    ctx.save();
+
+    const x = layout.audioPlayerButtonX - layout.audioPlayerButtonWidth / 2;
+    const y = layout.audioPlayerButtonY - layout.audioPlayerButtonHeight / 2;
+
+    if (buttonImage) {
+      // Use button image
+      const aspectRatio = buttonImage.width / buttonImage.height;
+      let imgWidth = layout.audioPlayerButtonWidth;
+      let imgHeight = imgWidth / aspectRatio;
+
+      // If height is too large, scale by height instead
+      if (imgHeight > layout.audioPlayerButtonHeight) {
+        imgHeight = layout.audioPlayerButtonHeight;
+        imgWidth = imgHeight * aspectRatio;
+      }
+
+      const imgX = x + (layout.audioPlayerButtonWidth - imgWidth) / 2;
+      const imgY = y + (layout.audioPlayerButtonHeight - imgHeight) / 2;
+
+      // Apply hover effect - scale and add glow
+      if (button.hovered) {
+        ctx.shadowColor = "rgba(74, 158, 255, 0.8)"; // Blue glow
+        ctx.shadowBlur = this.game.getScaledValue(20);
+
+        // Scale up slightly on hover
+        const scale = 1.05;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        const scaledX = x + (layout.audioPlayerButtonWidth - scaledWidth) / 2;
+        const scaledY = y + (layout.audioPlayerButtonHeight - scaledHeight) / 2;
+
+        ctx.drawImage(buttonImage, scaledX, scaledY, scaledWidth, scaledHeight);
+      } else {
+        ctx.drawImage(buttonImage, imgX, imgY, imgWidth, imgHeight);
+      }
+    } else {
+      // Fallback to gradient style if image not loaded
+      const radius = this.game.getScaledValue(8);
+
+      // Enhanced gradient background
+      const gradient = ctx.createLinearGradient(
+        x,
+        y,
+        x,
+        y + layout.audioPlayerButtonHeight
+      );
+
+      let color1, color2;
+      if (button.hovered) {
+        color1 = "#4a9eff";
+        color2 = "#2d7dd2";
+      } else {
+        color1 = "#2d7dd2";
+        color2 = "#1e5a9e";
+      }
+
+      gradient.addColorStop(0, color1);
+      gradient.addColorStop(1, color2);
+      ctx.fillStyle = gradient;
+
+      if (button.hovered) {
+        ctx.shadowColor = "#4a9eff";
+        ctx.shadowBlur = this.game.getScaledValue(12);
+      }
+
+      ctx.strokeStyle = button.hovered ? "#6ab7ff" : "#2d7dd2";
+      ctx.lineWidth = this.game.getScaledValue(3);
+
+      // Draw rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + layout.audioPlayerButtonWidth - radius, y);
+      ctx.quadraticCurveTo(
+        x + layout.audioPlayerButtonWidth,
+        y,
+        x + layout.audioPlayerButtonWidth,
+        y + radius
+      );
+      ctx.lineTo(
+        x + layout.audioPlayerButtonWidth,
+        y + layout.audioPlayerButtonHeight - radius
+      );
+      ctx.quadraticCurveTo(
+        x + layout.audioPlayerButtonWidth,
+        y + layout.audioPlayerButtonHeight,
+        x + layout.audioPlayerButtonWidth - radius,
+        y + layout.audioPlayerButtonHeight
+      );
+      ctx.lineTo(x + radius, y + layout.audioPlayerButtonHeight);
+      ctx.quadraticCurveTo(
+        x,
+        y + layout.audioPlayerButtonHeight,
+        x,
+        y + layout.audioPlayerButtonHeight - radius
+      );
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+
+      ctx.fill();
+      ctx.stroke();
+
+      if (button.hovered) {
+        ctx.shadowColor = "#4a9eff";
+        ctx.shadowBlur = this.game.getScaledValue(10);
+        ctx.stroke();
+      }
+
+      // Button text
+      this.renderText(
+        ctx,
+        "MUSIC PLAYER",
+        layout.audioPlayerButtonX,
+        layout.audioPlayerButtonY,
+        {
+          fontSize: this.game.getScaledValue(18),
+          color: "white",
+          weight: "bold",
+        }
+      );
+    }
+
+    ctx.restore();
+  }
+
   openVideoPlayer() {
     this.videoPlayerActive = true;
 
@@ -4885,7 +5904,19 @@ class LevelSelect extends Screen {
     try {
       // Create video element
       this.videoElement = document.createElement("video");
-      this.videoElement.src = "videos/video-end.mp4";
+
+      // Select video based on current difficulty (0 for base game, 1-4 for New Game+ 1-4)
+      let videoNumber = 0; // Default to base game video (video 0)
+      let videoSrc = "videos/video-end.mp4";
+      if (
+        this.game.selectedDifficulty >= 1 &&
+        this.game.selectedDifficulty <= 4
+      ) {
+        videoNumber = this.game.selectedDifficulty;
+        videoSrc = `videos/video-end-${videoNumber}.mp4`;
+      }
+
+      this.videoElement.src = videoSrc;
       this.videoElement.loop = true;
       this.videoElement.autoplay = true;
       this.videoElement.controls = false;
@@ -4893,13 +5924,34 @@ class LevelSelect extends Screen {
 
       // Add error handlers
       this.videoElement.addEventListener("error", () => {
-        console.error("🎥 Video failed to load");
         this.closeVideoPlayer();
       });
 
+      // Track video watching for achievements (when video actually starts playing)
+      this.videoElement.addEventListener(
+        "playing",
+        () => {
+          if (!this.game.watchedVideos.includes(videoNumber)) {
+            // Mark this video as watched
+            this.game.watchedVideos.push(videoNumber);
+
+            // Unlock "Secret Video Watcher" achievement (watch any video)
+            this.game.unlockAchievement("secret_video_watcher");
+
+            // Check if all 5 videos have been watched (0, 1, 2, 3, 4)
+            if (this.game.watchedVideos.length >= 5) {
+              this.game.unlockAchievement("video_completionist");
+            }
+
+            // Save progress
+            this.game.saveGameData();
+          }
+        },
+        { once: true }
+      ); // Only trigger once per video open
+
       document.body.appendChild(this.videoElement);
     } catch (error) {
-      console.error("🎥 Error creating video element:", error);
       this.closeVideoPlayer();
     }
   }
@@ -4927,35 +5979,77 @@ class LevelSelect extends Screen {
     ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    // Video container
-    const videoWidth = this.game.getScaledValue(640);
-    const videoHeight = this.game.getScaledValue(360);
-    const videoX = (canvasWidth - videoWidth) / 2;
-    const videoY = (canvasHeight - videoHeight) / 2;
+    // Fixed container dimensions (same height for all videos)
+    const containerHeight = this.game.getScaledValue(360);
+    const containerWidth = this.game.getScaledValue(640);
+    const containerX = (canvasWidth - containerWidth) / 2;
+    const containerY = (canvasHeight - containerHeight) / 2;
 
     // Container background
     ctx.fillStyle = "rgba(20, 20, 20, 0.95)";
-    ctx.fillRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
+    ctx.fillRect(
+      containerX - 10,
+      containerY - 10,
+      containerWidth + 20,
+      containerHeight + 20
+    );
 
     // Border with glow
     ctx.strokeStyle = "#BB8FCE";
     ctx.lineWidth = this.game.getScaledValue(3);
     ctx.shadowColor = "#BB8FCE";
     ctx.shadowBlur = this.game.getScaledValue(15);
-    ctx.strokeRect(videoX - 10, videoY - 10, videoWidth + 20, videoHeight + 20);
+    ctx.strokeRect(
+      containerX - 10,
+      containerY - 10,
+      containerWidth + 20,
+      containerHeight + 20
+    );
 
     // Draw video frame if ready
     if (this.videoElement && this.videoElement.readyState >= 2) {
       try {
+        // Videos are 800x462 with black bars on left/right
+        // The actual content is centered in the video
+        // Crop out the black bars by calculating the content area
+        const videoWidth = this.videoElement.videoWidth;
+        const videoHeight = this.videoElement.videoHeight;
+
+        // Calculate source crop to remove black bars
+        // Assuming the content is 4:3 or similar centered in 800x462
+        // Target aspect ratio is 16:9 (640:360)
+        const targetAspectRatio = 16 / 9;
+        const videoAspectRatio = videoWidth / videoHeight;
+
+        let sourceX, sourceY, sourceWidth, sourceHeight;
+
+        if (videoAspectRatio > targetAspectRatio) {
+          // Video is wider - crop left and right (remove pillarboxing)
+          sourceHeight = videoHeight;
+          sourceWidth = videoHeight * targetAspectRatio;
+          sourceX = (videoWidth - sourceWidth) / 2;
+          sourceY = 0;
+        } else {
+          // Video is taller - crop top and bottom
+          sourceWidth = videoWidth;
+          sourceHeight = videoWidth / targetAspectRatio;
+          sourceX = 0;
+          sourceY = (videoHeight - sourceHeight) / 2;
+        }
+
+        // Draw the cropped portion of the video to fill the container
         ctx.drawImage(
           this.videoElement,
-          videoX,
-          videoY,
-          videoWidth,
-          videoHeight
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          containerX,
+          containerY,
+          containerWidth,
+          containerHeight
         );
       } catch (error) {
-        console.error("🎥 Error drawing video frame:", error);
         // Show error message
         ctx.shadowBlur = 0;
         ctx.fillStyle = "#FF6B6B";
@@ -4983,7 +6077,7 @@ class LevelSelect extends Screen {
     ctx.fillText(
       "Press ESC or click outside to close",
       canvasWidth / 2,
-      videoY + videoHeight + 30
+      containerY + containerHeight + 30
     );
 
     ctx.restore();

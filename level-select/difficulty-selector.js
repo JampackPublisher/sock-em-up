@@ -46,7 +46,6 @@ class DifficultySelector {
   isDifficultyCompleted(difficulty) {
     const levels = this.game.completedLevelsByDifficulty[difficulty];
     if (!levels) {
-      console.log(`❌ No levels data for difficulty ${difficulty}`);
       return false;
     }
 
@@ -112,31 +111,45 @@ class DifficultySelector {
    */
   selectDifficulty(difficulty) {
     if (difficulty <= this.game.highestUnlockedDifficulty) {
-      console.log(
-        `🎮 Switching from difficulty ${this.game.selectedDifficulty} to ${difficulty}`
-      );
       this.game.selectedDifficulty = difficulty;
 
-      // Update legacy pointers to point to the selected difficulty's arrays
-      this.game.unlockedLevels = this.game.unlockedLevelsByDifficulty[
-        difficulty
-      ] || [true, false, false, false, false, false, false, false, false];
-      this.game.completedLevels = this.game.completedLevelsByDifficulty[
-        difficulty
-      ] || [false, false, false, false, false, false, false, false, false];
+      // Initialize arrays for this difficulty if they don't exist
+      if (!this.game.unlockedLevelsByDifficulty[difficulty]) {
+        this.game.unlockedLevelsByDifficulty[difficulty] = [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+        ];
+      }
+      if (!this.game.completedLevelsByDifficulty[difficulty]) {
+        this.game.completedLevelsByDifficulty[difficulty] = [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+        ];
+      }
 
-      console.log(`📊 Updated levels - Unlocked:`, this.game.unlockedLevels);
-      console.log(`📊 Updated levels - Completed:`, this.game.completedLevels);
+      // Update legacy pointers to point to the selected difficulty's arrays
+      this.game.unlockedLevels = this.game.unlockedLevelsByDifficulty[difficulty];
+      this.game.completedLevels = this.game.completedLevelsByDifficulty[difficulty];
 
       this.game.audioManager.playSound("button-click", false, 0.6);
       this.close();
 
       // Save the selected difficulty
       this.game.saveGameData();
-
-      console.log(
-        `✅ Switched to difficulty: ${this.getDifficultyName(difficulty)}`
-      );
     }
   }
 

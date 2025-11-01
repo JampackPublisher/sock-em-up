@@ -15,6 +15,12 @@ canvas {
   /* Canvas positioning handled by JavaScript */
 }
 
+/* Reticule overlay - always on top */
+#reticuleCanvas {
+  z-index: 99999;
+  pointer-events: none;
+}
+
 #gameContainer {
   position: relative;
   width: 100vw;

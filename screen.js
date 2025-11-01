@@ -354,7 +354,6 @@ class Screen {
     const fillWidth = width * Math.max(0, Math.min(1, progress));
     let fillColor = style.fillColor || "#4caf50";
 
-    // Fix Bug #24: Use >= for color thresholds
     if (progress >= 0.7) fillColor = "#ffc107";
     if (progress >= 1) fillColor = "#ff5722";
 

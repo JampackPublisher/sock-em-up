@@ -236,7 +236,6 @@ class SockManager {
         animation.wiggleIntensity =
           Math.sin(wiggleFreq) * this.game.getScaledValue(3) * easeProgress;
 
-        // Fix Bug #14: Check if we crossed a multiple of 8 (for floating-point timer)
         if (Math.floor(animation.timer / 8) > Math.floor(oldTimer / 8)) {
           this.particleEffects.push({
             x:
@@ -294,8 +293,12 @@ class SockManager {
     const sockballImage = GameConfig.IMAGES.SOCK_BALLS[animation.sockType - 1];
 
     // Target the sockball counter on the top bar
-    const targetX = this.sockballTargetX || (this.game.getCanvasWidth() - this.game.getScaledValue(525));
-    const targetY = this.sockballTargetY || (this.game.getCanvasHeight() - this.game.getScaledValue(125));
+    const targetX =
+      this.sockballTargetX ||
+      this.game.getCanvasWidth() - this.game.getScaledValue(525);
+    const targetY =
+      this.sockballTargetY ||
+      this.game.getCanvasHeight() - this.game.getScaledValue(125);
 
     const sockballAnim = {
       image: sockballImage,
@@ -317,11 +320,7 @@ class SockManager {
 
     this.sockballAnimations.push(sockballAnim);
 
-    // Remove the sockball from the queue since we're now animating it
-    // This prevents double-counting (queue + completed)
     this.game.getNextSockballFromQueue();
-
-    console.log(`🎬 Sockball animation started. Total animating: ${this.sockballAnimations.length}, Queue: ${this.game.getSockballQueueLength()}`);
   }
 
   updateSockballAnimations(deltaTime) {
@@ -370,15 +369,13 @@ class SockManager {
           this.game.totalSockMatches++; // Track lifetime total matches
           this.game.totalSockballsEarned++; // Track lifetime sockballs
 
-          console.log(`✅ Sockball animation completed. sockBalls: ${this.game.sockBalls}, Remaining animating: ${this.sockballAnimations.length - 1}`);
-
-          // Check Sock Hoarder achievement (100 socks matched)
-          if (this.game.totalSockMatches >= 100) {
+          // Check Sock Hoarder achievement
+          if (this.game.totalSockMatches >= GameConfig.ACHIEVEMENTS.SOCK_HOARDER.threshold) {
             this.game.unlockAchievement("sock_hoarder");
           }
 
-          // Check Martha's Millionaire achievement (2000 sockballs earned)
-          if (this.game.totalSockballsEarned >= 2000) {
+          // Check Martha's Millionaire achievement
+          if (this.game.totalSockballsEarned >= GameConfig.ACHIEVEMENTS.MARTHAS_MILLIONAIRE.threshold) {
             this.game.unlockAchievement("marthas_millionaire");
           }
 
@@ -501,12 +498,16 @@ class SockManager {
     ctx.restore();
   }
 
-  renderSocks(ctx) {
+  renderSocks(ctx, hoveredSock = null, draggedSock = null) {
     this.socks.forEach((sock) => {
       ctx.save();
 
       let drawX = sock.x - sock.width / 2;
       let drawY = sock.y - sock.height / 2;
+
+      // Check if this sock is being hovered or dragged
+      const isHovered = sock === hoveredSock;
+      const isDragged = sock === draggedSock;
 
       this.matchAnimations.forEach((animation) => {
         if (animation.socks.includes(sock)) {
@@ -529,6 +530,23 @@ class SockManager {
       if (sock.glowEffect > 0) {
         ctx.shadowColor = "rgba(255, 200, 100, 0.8)";
         ctx.shadowBlur = sock.glowEffect;
+      }
+
+      // Add hover effect - white/blue glow
+      if (isHovered && !isDragged) {
+        ctx.shadowColor = "rgba(100, 180, 255, 0.9)";
+        ctx.shadowBlur = this.game.getScaledValue(25);
+      }
+
+      // Add dragged effect - stronger yellow glow with scale
+      if (isDragged) {
+        ctx.shadowColor = "rgba(255, 215, 0, 1.0)";
+        ctx.shadowBlur = this.game.getScaledValue(30);
+
+        // Slightly scale up dragged sock
+        ctx.translate(sock.x, sock.y);
+        ctx.scale(1.1, 1.1);
+        ctx.translate(-sock.x, -sock.y);
       }
 
       if (sock.rotation) {
